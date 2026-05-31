@@ -13,6 +13,9 @@ The project baseline follows the intent of GOST R 56939-2016, "Information prote
 - panic recovery middleware is enabled;
 - basic security headers are added to HTTP responses;
 - database migrations are versioned and applied through `goose`;
+- integration events are persisted through the Outbox Pattern before publication;
+- Kafka messages include stable `event_id` values for idempotent consumers;
+- failed event delivery is retried and then routed to a Dead Letter Queue topic;
 - `.env` is excluded from git.
 
 ## Required Next Steps

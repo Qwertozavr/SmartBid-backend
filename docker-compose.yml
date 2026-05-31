@@ -14,12 +14,19 @@ services:
       DB_PASSWORD: "${DB_PASSWORD}"
       DB_SSLMODE: "${DB_SSLMODE}"
       DATABASE_URL: "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
+      KAFKA_BROKERS: "${KAFKA_BROKERS}"
+      KAFKA_AD_CREATED_TOPIC: "${KAFKA_AD_CREATED_TOPIC}"
+      KAFKA_DLQ_TOPIC: "${KAFKA_DLQ_TOPIC}"
       MIGRATIONS_DIR: "/app/migrations"
     ports:
       - "${SERVICE_HOST}:${SERVICE_PORT}:${SERVICE_PORT}"
     depends_on:
       db:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   db:
     image: postgres:16-alpine
@@ -39,5 +46,53 @@ services:
       timeout: 5s
       retries: 5
 
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: smartbid-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "${KAFKA_HOST_PORT}:9092"
+    volumes:
+      - smartbid_kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  kafka-init:
+    image: apache/kafka:3.7.0
+    container_name: smartbid-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists
+        --topic ${KAFKA_AD_CREATED_TOPIC}
+        --partitions 1
+        --replication-factor 1 &&
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists
+        --topic ${KAFKA_DLQ_TOPIC}
+        --partitions 1
+        --replication-factor 1
+
 volumes:
   smartbid_pg_data:
+  smartbid_kafka_data:
