@@ -1,0 +1,12 @@
+telegram:
+  bot:
+    token: 8966652449:AAH4yBHs9SIjLwMm_WmoT4ye3KKDFqFjZNU
+    username: reu_smart_bit_bot
+  target-chat-id: -1003999451875
+backend:
+  url: http://localhost:8080
+server:
+  port: 8000
+logging:
+  level:
+    org.telegram: WARN
