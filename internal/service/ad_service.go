@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"smartbid-backend/internal/domain"
 	"smartbid-backend/internal/repository"
@@ -17,6 +18,7 @@ func NewAdService(ads repository.AdRepository) *AdService {
 
 func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
 	if err := input.Validate(); err != nil {
+		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
 	}
 
@@ -24,7 +26,13 @@ func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (dom
 
 	input.Status = domain.AdStatusCreated
 
-	return s.ads.Create(ctx, input)
+	ad, err := s.ads.Create(ctx, input)
+	if err != nil {
+		fmt.Println("ERROR Create Ad:", err)
+		return domain.Ad{}, err
+	}
+
+	return ad, nil
 }
 
 func (s *AdService) FindByID(ctx context.Context, id string) (domain.Ad, error) {

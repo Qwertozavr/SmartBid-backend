@@ -11,7 +11,7 @@ import (
 	"smartbid-backend/internal/http/dto"
 )
 
-const maxRequestBodyBytes = 1 << 20
+const maxRequestBodyBytes = 8 << 20
 
 type AdService interface {
 	Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error)
