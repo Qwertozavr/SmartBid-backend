@@ -75,5 +75,7 @@ curl http://localhost:8080/ping
 - `GET /ping` - health-check приложения.
 - `POST /api/v1/ads` - создание объявления.
 - `GET /api/v1/ads/{id}` - получение объявления по идентификатору.
+- `POST /api/v1/ad/{id}/increase` - поднятие цены объявления на 5%.
 
 Создание объявления поддерживает `application/json` с полями `title`, `description` и `photo`. Поле `photo` передаётся как `[]byte`, поэтому в JSON кодируется стандартно для Go - base64-строкой.
+Поднятие цены принимает `application/json` с полем `pretendent_id` и возвращает идентификатор объявления с новой ценой.
