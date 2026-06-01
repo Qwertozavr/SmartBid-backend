@@ -36,6 +36,7 @@ func NewAdService(
 
 func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
 	if err := input.Validate(); err != nil {
+		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
 	}
 
@@ -58,6 +59,7 @@ func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (dom
 		return nil
 	})
 	if err != nil {
+		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
 	}
 

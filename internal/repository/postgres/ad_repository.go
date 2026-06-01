@@ -23,17 +23,18 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 		with status as (
 			select id
 			from ad_status
-			where slug = $4
+			where slug = $5
 		), inserted as (
-			insert into ads (title, description, start_price, final_price, status_id)
-			select $1, $2, $3, $3, status.id
+			insert into ads (title, description, photo, start_price, final_price, status_id)
+			select $1, $2, $3, $4, $4, status.id
 			from status
-			returning id, title, description, start_price, status_id, created_at, updated_at
+			returning id, title, description, photo, start_price, status_id, created_at, updated_at
 		)
 		select
 			inserted.id::text,
 			inserted.title,
 			inserted.description,
+			coalesce(inserted.photo, ''::bytea),
 			inserted.start_price,
 			ad_status.slug,
 			inserted.created_at,
@@ -43,8 +44,8 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 	`
 
 	var ad domain.Ad
-	err := executor(ctx, r.pool).QueryRow(ctx, query, input.Title, input.Description, input.Price, domain.AdStatusCreated).
-		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
+	err := executor(ctx, r.pool).QueryRow(ctx, query, input.Title, input.Description, input.Photo, input.Price, domain.AdStatusCreated).
+		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Photo, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		return domain.Ad{}, err
 	}
@@ -58,6 +59,7 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 			ads.id::text,
 			ads.title,
 			ads.description,
+			coalesce(ads.photo, ''::bytea),
 			ads.start_price,
 			ad_status.slug,
 			ads.created_at,
@@ -69,7 +71,7 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 
 	var ad domain.Ad
 	err := executor(ctx, r.pool).QueryRow(ctx, query, id).
-		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
+		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Photo, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Ad{}, domain.ErrAdNotFound
