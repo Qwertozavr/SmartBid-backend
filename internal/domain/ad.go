@@ -23,16 +23,17 @@ const (
 )
 
 type Ad struct {
-	ID          string
-	Title       string
-	ChatId      int
-	MessageId   int
-	Description *string
-	Photo       []byte
-	Price       int64
-	Status      AdStatus
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           string
+	Title        string
+	ChatId       int
+	MessageId    int
+	Description  *string
+	Photo        []byte
+	Price        int64
+	PretendentID *int
+	Status       AdStatus
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type CreateAdInput struct {
@@ -43,6 +44,32 @@ type CreateAdInput struct {
 	Photo       []byte
 	Price       int64
 	Status      AdStatus
+}
+
+type IncreaseAdPriceInput struct {
+	AdID         string
+	PretendentID int
+}
+
+type UpdateAdPriceInput struct {
+	AdID         string
+	Price        int64
+	PretendentID int
+}
+
+type AdPriceUpdate struct {
+	AdID  string
+	Price int64
+}
+
+func (input IncreaseAdPriceInput) Validate() error {
+	if strings.TrimSpace(input.AdID) == "" {
+		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
+	}
+	if input.PretendentID <= 0 {
+		return fmt.Errorf("%w: pretendent_id must be greater than zero", ErrInvalidAd)
+	}
+	return nil
 }
 
 func (input CreateAdInput) Validate() error {

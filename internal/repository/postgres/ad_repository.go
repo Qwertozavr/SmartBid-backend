@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/doug-martin/goqu/v9"
@@ -29,6 +30,14 @@ func adDescriptionValue(description *string) string {
 	return *description
 }
 
+func adPretendentIDValue(pretendentID sql.NullInt64) *int {
+	if !pretendentID.Valid {
+		return nil
+	}
+	value := int(pretendentID.Int64)
+	return &value
+}
+
 func createAdQuery(input domain.CreateAdInput) (string, []any, error) {
 	return goquPostgresDialect.
 		Insert("ads").
@@ -40,7 +49,7 @@ func createAdQuery(input domain.CreateAdInput) (string, []any, error) {
 			"photo":       input.Photo,
 			"start_price": input.Price,
 			"final_price": input.Price,
-			"status_id": goqu.L("(select id from ad_status where slug = ?)", domain.AdStatusCreated),
+			"status_id":   goqu.L("(select id from ad_status where slug = ?)", domain.AdStatusCreated),
 		}).
 		Returning(
 			goqu.L("id::text"),
@@ -49,7 +58,8 @@ func createAdQuery(input domain.CreateAdInput) (string, []any, error) {
 			"message_id",
 			"description",
 			goqu.L("coalesce(photo, ''::bytea)"),
-			"start_price",
+			"final_price",
+			"pretendent_id",
 			"created_at",
 			"updated_at",
 		).
@@ -65,13 +75,15 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 
 	var ad domain.Ad
 	var description string
+	var pretendentID sql.NullInt64
 	err = executor(ctx, r.pool).QueryRow(ctx, query, args...).
-		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &ad.CreatedAt, &ad.UpdatedAt)
+		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		return domain.Ad{}, err
 	}
 
 	ad.Description = &description
+	ad.PretendentID = adPretendentIDValue(pretendentID)
 	ad.Status = domain.AdStatusCreated
 
 	return ad, nil
@@ -87,7 +99,8 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 			goqu.I("ads.message_id"),
 			goqu.I("ads.description"),
 			goqu.L("coalesce(ads.photo, ''::bytea)"),
-			goqu.I("ads.start_price"),
+			goqu.I("ads.final_price"),
+			goqu.I("ads.pretendent_id"),
 			goqu.I("ad_status.slug"),
 			goqu.I("ads.created_at"),
 			goqu.I("ads.updated_at"),
@@ -105,8 +118,9 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 
 	var ad domain.Ad
 	var description string
+	var pretendentID sql.NullInt64
 	err = executor(ctx, r.pool).QueryRow(ctx, query, args...).
-		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
+		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Ad{}, domain.ErrAdNotFound
@@ -115,6 +129,43 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 	}
 
 	ad.Description = &description
+	ad.PretendentID = adPretendentIDValue(pretendentID)
 
 	return ad, nil
+}
+
+func updateAdPriceQuery(input domain.UpdateAdPriceInput) (string, []any, error) {
+	return goquPostgresDialect.
+		Update("ads").
+		Set(goqu.Record{
+			"final_price":   input.Price,
+			"pretendent_id": input.PretendentID,
+			"updated_at":    goqu.L("now()"),
+		}).
+		Where(goqu.I("id").Eq(input.AdID)).
+		Returning(
+			goqu.L("id::text"),
+			"final_price",
+		).
+		Prepared(true).
+		ToSQL()
+}
+
+func (r *AdRepository) UpdatePrice(ctx context.Context, input domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error) {
+	query, args, err := updateAdPriceQuery(input)
+	if err != nil {
+		return domain.AdPriceUpdate{}, err
+	}
+
+	var update domain.AdPriceUpdate
+	err = executor(ctx, r.pool).QueryRow(ctx, query, args...).
+		Scan(&update.AdID, &update.Price)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.AdPriceUpdate{}, domain.ErrAdNotFound
+		}
+		return domain.AdPriceUpdate{}, err
+	}
+
+	return update, nil
 }

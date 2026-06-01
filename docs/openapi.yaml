@@ -127,6 +127,69 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: failed to find ad
+  /api/v1/ad/{id}/increase:
+    post:
+      tags:
+        - Ads
+      summary: Increase ad price
+      operationId: increaseAdPrice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Ad UUID.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncreaseAdPriceRequest"
+            examples:
+              bidder:
+                value:
+                  pretendent_id: 123
+      responses:
+        "200":
+          description: Ad price was increased by 5%.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdPriceUpdate"
+        "400":
+          description: Invalid request body or invalid ad data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid request body
+                invalidAd:
+                  value:
+                    error: "invalid ad: pretendent_id must be greater than zero"
+                samePretendent:
+                  value:
+                    error: "invalid ad: pretendent_id must differ from previous pretendent_id"
+        "404":
+          description: Ad was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: ad not found
+        "500":
+          description: Failed to increase ad price.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to increase ad price
 components:
   schemas:
     PingResponse:
@@ -167,6 +230,32 @@ components:
           format: byte
           description: Optional photo encoded as base64.
           example: iVBORw0KGgo=
+    IncreaseAdPriceRequest:
+      type: object
+      required:
+        - pretendent_id
+      additionalProperties: false
+      properties:
+        pretendent_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: ID of the latest user who offered the price.
+          example: 123
+    AdPriceUpdate:
+      type: object
+      required:
+        - id
+        - price
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7aaf3e98-9e46-4a7e-9cb4-99a46d25a442
+        price:
+          type: integer
+          format: int64
+          example: 105
     Ad:
       type: object
       required:
@@ -176,6 +265,7 @@ components:
         - message_id
         - description
         - price
+        - pretendent_id
         - status
         - created_at
         - updated_at
@@ -208,6 +298,12 @@ components:
           type: integer
           format: int64
           example: 100
+        pretendent_id:
+          type: integer
+          format: int32
+          nullable: true
+          description: ID of the latest user who offered the price.
+          example: 123
         status:
           $ref: "#/components/schemas/AdStatus"
         created_at:

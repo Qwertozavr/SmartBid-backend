@@ -14,6 +14,29 @@ type CreateAdRequest struct {
 	Photo       []byte  `json:"photo,omitempty"`
 }
 
+type IncreaseAdPriceRequest struct {
+	PretendentID int `json:"pretendent_id"`
+}
+
+type AdPriceUpdateResponse struct {
+	ID    string `json:"id"`
+	Price int64  `json:"price"`
+}
+
+func (request IncreaseAdPriceRequest) ToDomainInput(adID string) domain.IncreaseAdPriceInput {
+	return domain.IncreaseAdPriceInput{
+		AdID:         adID,
+		PretendentID: request.PretendentID,
+	}
+}
+
+func NewAdPriceUpdateResponse(update domain.AdPriceUpdate) AdPriceUpdateResponse {
+	return AdPriceUpdateResponse{
+		ID:    update.AdID,
+		Price: update.Price,
+	}
+}
+
 func (request CreateAdRequest) ToDomainInput() domain.CreateAdInput {
 	return domain.CreateAdInput{
 		Title:       request.Title,
@@ -25,29 +48,31 @@ func (request CreateAdRequest) ToDomainInput() domain.CreateAdInput {
 }
 
 type AdResponse struct {
-	ID          string          `json:"id"`
-	Title       string          `json:"title"`
-	ChatId      int             `json:"chat_id"`
-	MessageId   int             `json:"message_id"`
-	Description *string         `json:"description"`
-	Photo       []byte          `json:"photo,omitempty"`
-	Price       int64           `json:"price"`
-	Status      domain.AdStatus `json:"status"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	ChatId       int             `json:"chat_id"`
+	MessageId    int             `json:"message_id"`
+	Description  *string         `json:"description"`
+	Photo        []byte          `json:"photo,omitempty"`
+	Price        int64           `json:"price"`
+	PretendentID *int            `json:"pretendent_id"`
+	Status       domain.AdStatus `json:"status"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 func NewAdResponse(ad domain.Ad) AdResponse {
 	return AdResponse{
-		ID:          ad.ID,
-		Title:       ad.Title,
-		ChatId:      ad.ChatId,
-		MessageId:   ad.MessageId,
-		Description: ad.Description,
-		Photo:       ad.Photo,
-		Price:       ad.Price,
-		Status:      ad.Status,
-		CreatedAt:   ad.CreatedAt,
-		UpdatedAt:   ad.UpdatedAt,
+		ID:           ad.ID,
+		Title:        ad.Title,
+		ChatId:       ad.ChatId,
+		MessageId:    ad.MessageId,
+		Description:  ad.Description,
+		Photo:        ad.Photo,
+		Price:        ad.Price,
+		PretendentID: ad.PretendentID,
+		Status:       ad.Status,
+		CreatedAt:    ad.CreatedAt,
+		UpdatedAt:    ad.UpdatedAt,
 	}
 }

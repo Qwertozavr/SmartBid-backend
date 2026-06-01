@@ -70,6 +70,26 @@ func (s *AdService) FindByID(ctx context.Context, id string) (domain.Ad, error) 
 	return s.ads.FindByID(ctx, id)
 }
 
+func (s *AdService) IncreasePrice(ctx context.Context, input domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error) {
+	if err := input.Validate(); err != nil {
+		return domain.AdPriceUpdate{}, err
+	}
+
+	ad, err := s.ads.FindByID(ctx, input.AdID)
+	if err != nil {
+		return domain.AdPriceUpdate{}, err
+	}
+	if ad.PretendentID != nil && *ad.PretendentID == input.PretendentID {
+		return domain.AdPriceUpdate{}, fmt.Errorf("%w: pretendent_id must differ from previous pretendent_id", domain.ErrInvalidAd)
+	}
+
+	return s.ads.UpdatePrice(ctx, domain.UpdateAdPriceInput{
+		AdID:         input.AdID,
+		Price:        ad.Price * 105 / 100,
+		PretendentID: input.PretendentID,
+	})
+}
+
 func (s *AdService) createAdCreatedOutboxEvent(ctx context.Context, adID string) error {
 	eventID, err := domain.NewEventID()
 	if err != nil {
