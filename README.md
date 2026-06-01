@@ -35,16 +35,28 @@ DB_NAME=smartbid
 DB_USER=smartbid
 DB_PASSWORD=smartbid
 DB_SSLMODE=disable
+
+KAFKA_BROKERS=kafka:9092
+KAFKA_HOST_PORT=9092
+KAFKA_AD_CREATED_TOPIC=ad-created
+KAFKA_DLQ_TOPIC=ad-created-dlq
 ```
 
 `DB_PORT` - порт PostgreSQL внутри Docker-сети, по нему backend подключается к контейнеру `db`.
 `DB_HOST_PORT` - порт PostgreSQL на твоей машине, например для подключения через IDE или `psql`.
+`KAFKA_BROKERS` - адрес Kafka внутри Docker-сети, по нему backend публикует события.
+`KAFKA_HOST_PORT` - порт Kafka на твоей машине.
+`KAFKA_AD_CREATED_TOPIC` - топик для событий о создании объявлений.
+`KAFKA_DLQ_TOPIC` - топик для событий, которые не удалось доставить после повторных попыток.
 
 ```bash
 docker compose up --build
 ```
 
 При старте контейнера приложение автоматически выполняет миграции через `goose`, а затем запускает HTTP-сервер.
+Kafka разворачивается в Docker Compose, а init-контейнер создаёт топики `ad-created` и `ad-created-dlq`.
+
+События о создании объявлений публикуются через Outbox Pattern: создание объявления и запись события выполняются в одной транзакции PostgreSQL, после чего фоновый dispatcher доставляет событие в Kafka. Payload события содержит идемпотентный `event_id` и `ad_id`.
 
 Проверка работы приложения:
 

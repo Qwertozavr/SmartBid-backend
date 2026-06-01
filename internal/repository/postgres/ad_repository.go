@@ -44,7 +44,7 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 	`
 
 	var ad domain.Ad
-	err := r.pool.QueryRow(ctx, query, input.Title, input.Description, input.Photo, input.Price, domain.AdStatusCreated).
+	err := executor(ctx, r.pool).QueryRow(ctx, query, input.Title, input.Description, input.Photo, input.Price, domain.AdStatusCreated).
 		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Photo, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		return domain.Ad{}, err
@@ -70,7 +70,7 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 	`
 
 	var ad domain.Ad
-	err := r.pool.QueryRow(ctx, query, id).
+	err := executor(ctx, r.pool).QueryRow(ctx, query, id).
 		Scan(&ad.ID, &ad.Title, &ad.Description, &ad.Photo, &ad.Price, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

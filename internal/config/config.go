@@ -3,11 +3,15 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
-	HTTPAddr    string
-	DatabaseURL string
+	HTTPAddr            string
+	DatabaseURL         string
+	KafkaBrokers        []string
+	KafkaAdCreatedTopic string
+	KafkaDLQTopic       string
 }
 
 func Load() Config {
@@ -15,8 +19,11 @@ func Load() Config {
 	servicePort := getEnv("SERVICE_PORT", "8080")
 
 	return Config{
-		HTTPAddr:    buildHTTPAddr(serviceHost, servicePort),
-		DatabaseURL: buildDatabaseURL(),
+		HTTPAddr:            buildHTTPAddr(serviceHost, servicePort),
+		DatabaseURL:         buildDatabaseURL(),
+		KafkaBrokers:        splitCSV(getEnv("KAFKA_BROKERS", "localhost:9092")),
+		KafkaAdCreatedTopic: getEnv("KAFKA_AD_CREATED_TOPIC", "ad-created"),
+		KafkaDLQTopic:       getEnv("KAFKA_DLQ_TOPIC", "ad-created-dlq"),
 	}
 }
 
@@ -50,4 +57,16 @@ func getEnv(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
