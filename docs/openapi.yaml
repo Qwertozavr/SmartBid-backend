@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: SmartBid Backend API
+  version: 1.0.0
+  description: API for SmartBid ad management.
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+tags:
+  - name: Health
+    description: Service health checks.
+  - name: Ads
+    description: Ad management.
+paths:
+  /ping:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      operationId: ping
+      responses:
+        "200":
+          description: Service is available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+  /api/v1/ads:
+    post:
+      tags:
+        - Ads
+      summary: Create ad
+      operationId: createAd
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdRequest"
+            examples:
+              withDescription:
+                value:
+                  title: iPhone 15 Pro
+                  chat_id: 123456789
+                  message_id: 42
+                  description: Almost new, 256 GB
+                  photo: iVBORw0KGgo=
+              withoutDescription:
+                value:
+                  title: iPhone 15 Pro
+                  chat_id: 123456789
+                  message_id: 42
+      responses:
+        "201":
+          description: Ad was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ad"
+        "400":
+          description: Invalid request body or invalid ad data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid request body
+                invalidAd:
+                  value:
+                    error: "invalid ad: title is required"
+        "500":
+          description: Failed to create ad.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to create ad
+  /api/v1/ads/{id}:
+    get:
+      tags:
+        - Ads
+      summary: Get ad by ID
+      operationId: findAdById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Ad UUID.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Ad was found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ad"
+        "400":
+          description: Missing or invalid ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: id is required
+        "404":
+          description: Ad was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: ad not found
+        "500":
+          description: Failed to find ad.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to find ad
+components:
+  schemas:
+    PingResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+    CreateAdRequest:
+      type: object
+      required:
+        - title
+        - chat_id
+        - message_id
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: iPhone 15 Pro
+        chat_id:
+          type: integer
+          format: int32
+          example: 123456789
+        message_id:
+          type: integer
+          format: int32
+          example: 42
+        description:
+          type: string
+          nullable: true
+          description: Optional ad description. It may be omitted or null.
+          example: Almost new, 256 GB
+        photo:
+          type: string
+          format: byte
+          description: Optional photo encoded as base64.
+          example: iVBORw0KGgo=
+    Ad:
+      type: object
+      required:
+        - id
+        - title
+        - chat_id
+        - message_id
+        - description
+        - price
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 7aaf3e98-9e46-4a7e-9cb4-99a46d25a442
+        title:
+          type: string
+          example: iPhone 15 Pro
+        chat_id:
+          type: integer
+          format: int32
+          example: 123456789
+        message_id:
+          type: integer
+          format: int32
+          example: 42
+        description:
+          type: string
+          nullable: true
+          example: Almost new, 256 GB
+        photo:
+          type: string
+          format: byte
+          description: Photo encoded as base64. Omitted when empty.
+          example: iVBORw0KGgo=
+        price:
+          type: integer
+          format: int64
+          example: 100
+        status:
+          $ref: "#/components/schemas/AdStatus"
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-06-01T12:00:00Z
+        updated_at:
+          type: string
+          format: date-time
+          example: 2026-06-01T12:00:00Z
+    AdStatus:
+      type: string
+      enum:
+        - created
+        - published
+        - canceled
+        - bought
+        - removed
+      example: created
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: invalid request body

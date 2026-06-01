@@ -1,0 +1,7 @@
+-- +goose Up
+ALTER TABLE ads ADD COLUMN chat_id INTEGER NOT NULL;
+ALTER TABLE ads ADD COLUMN message_id INTEGER NOT NULL;
+
+-- +goose Down
+ALTER TABLE ads DROP COLUMN chat_id;
+ALTER TABLE ads DROP COLUMN message_id INTEGER NOT NULL;

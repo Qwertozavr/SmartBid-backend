@@ -7,14 +7,18 @@ import (
 )
 
 type CreateAdRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Photo       []byte `json:"photo,omitempty"`
+	Title       string  `json:"title"`
+	ChatId      int     `json:"chat_id"`
+	MessageId   int     `json:"message_id"`
+	Description *string `json:"description,omitempty"`
+	Photo       []byte  `json:"photo,omitempty"`
 }
 
 func (request CreateAdRequest) ToDomainInput() domain.CreateAdInput {
 	return domain.CreateAdInput{
 		Title:       request.Title,
+		ChatId:      request.ChatId,
+		MessageId:   request.MessageId,
 		Description: request.Description,
 		Photo:       request.Photo,
 	}
@@ -23,7 +27,9 @@ func (request CreateAdRequest) ToDomainInput() domain.CreateAdInput {
 type AdResponse struct {
 	ID          string          `json:"id"`
 	Title       string          `json:"title"`
-	Description string          `json:"description"`
+	ChatId      int             `json:"chat_id"`
+	MessageId   int             `json:"message_id"`
+	Description *string         `json:"description"`
 	Photo       []byte          `json:"photo,omitempty"`
 	Price       int64           `json:"price"`
 	Status      domain.AdStatus `json:"status"`
@@ -35,6 +41,8 @@ func NewAdResponse(ad domain.Ad) AdResponse {
 	return AdResponse{
 		ID:          ad.ID,
 		Title:       ad.Title,
+		ChatId:      ad.ChatId,
+		MessageId:   ad.MessageId,
 		Description: ad.Description,
 		Photo:       ad.Photo,
 		Price:       ad.Price,

@@ -25,7 +25,9 @@ const (
 type Ad struct {
 	ID          string
 	Title       string
-	Description string
+	ChatId      int
+	MessageId   int
+	Description *string
 	Photo       []byte
 	Price       int64
 	Status      AdStatus
@@ -35,7 +37,9 @@ type Ad struct {
 
 type CreateAdInput struct {
 	Title       string
-	Description string
+	ChatId      int
+	MessageId   int
+	Description *string
 	Photo       []byte
 	Price       int64
 	Status      AdStatus
@@ -44,9 +48,6 @@ type CreateAdInput struct {
 func (input CreateAdInput) Validate() error {
 	if strings.TrimSpace(input.Title) == "" {
 		return fmt.Errorf("%w: title is required", ErrInvalidAd)
-	}
-	if strings.TrimSpace(input.Description) == "" {
-		return fmt.Errorf("%w: description is required", ErrInvalidAd)
 	}
 	if input.Price < 0 {
 		return fmt.Errorf("%w: price must be greater than or equal to zero", ErrInvalidAd)
