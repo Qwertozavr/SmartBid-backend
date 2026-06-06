@@ -39,6 +39,7 @@ DB_SSLMODE=disable
 KAFKA_BROKERS=kafka:9092
 KAFKA_HOST_PORT=9092
 KAFKA_AD_CREATED_TOPIC=ad-created
+KAFKA_AD_FINISHED_TOPIC=ad-finished
 KAFKA_DLQ_TOPIC=ad-created-dlq
 ```
 
@@ -47,6 +48,7 @@ KAFKA_DLQ_TOPIC=ad-created-dlq
 `KAFKA_BROKERS` - адрес Kafka внутри Docker-сети, по нему backend публикует события.
 `KAFKA_HOST_PORT` - порт Kafka на твоей машине.
 `KAFKA_AD_CREATED_TOPIC` - топик для событий о создании объявлений.
+`KAFKA_AD_FINISHED_TOPIC` - топик для событий о завершении объявлений.
 `KAFKA_DLQ_TOPIC` - топик для событий, которые не удалось доставить после повторных попыток.
 
 ```bash
@@ -54,9 +56,11 @@ docker compose up --build
 ```
 
 При старте контейнера приложение автоматически выполняет миграции через `goose`, а затем запускает HTTP-сервер.
-Kafka разворачивается в Docker Compose, а init-контейнер создаёт топики `ad-created` и `ad-created-dlq`.
+Kafka разворачивается в Docker Compose, а init-контейнер создаёт топики `ad-created`, `ad-finished` и `ad-created-dlq`.
 
 События о создании объявлений публикуются через Outbox Pattern: создание объявления и запись события выполняются в одной транзакции PostgreSQL, после чего фоновый dispatcher доставляет событие в Kafka. Payload события содержит идемпотентный `event_id` и `ad_id`.
+
+При публикации backend запускает фиксированный 24-часовой таймер. Раз в минуту worker завершает просроченные объявления: с претендентом в статус `bought`, без претендента в `expired`. Переход в конечный статус и событие `ad.finished` записываются атомарно через Outbox Pattern. Telegram-бот выступает идемпотентным Consumer события завершения.
 
 Проверка работы приложения:
 
@@ -76,6 +80,7 @@ curl http://localhost:8080/ping
 - `POST /api/v1/ads` - создание объявления.
 - `GET /api/v1/ads/{id}` - получение объявления по идентификатору.
 - `POST /api/v1/ad/{id}/increase` - поднятие цены объявления на 5%.
+- `POST /api/v1/ads/{id}/remove` - удаление объявления владельцем чата.
 
 Создание объявления поддерживает `application/json` с полями `title`, `description` и `photo`. Поле `photo` передаётся как `[]byte`, поэтому в JSON кодируется стандартно для Go - base64-строкой.
 Поднятие цены принимает `application/json` с полем `pretendent_id` и возвращает идентификатор объявления с новой ценой.
