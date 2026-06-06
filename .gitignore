@@ -34,6 +34,8 @@ go.work.sum
 bin/
 tmp/
 docs/superpowers/
+docs/generated
+tools
 
 .DS_Store
 *.log
