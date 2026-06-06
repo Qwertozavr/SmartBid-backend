@@ -9,6 +9,7 @@ import (
 
 var ErrAdNotFound = errors.New("ad not found")
 var ErrInvalidAd = errors.New("invalid ad")
+var ErrAdNotActive = errors.New("ad is not active")
 
 const MaxAdPhotoBytes = 5 << 20
 
@@ -20,6 +21,7 @@ const (
 	AdStatusCanceled  AdStatus = "canceled"
 	AdStatusBought    AdStatus = "bought"
 	AdStatusRemoved   AdStatus = "removed"
+	AdStatusExpired   AdStatus = "expired"
 )
 
 type Ad struct {
@@ -32,6 +34,8 @@ type Ad struct {
 	Price        int64
 	PretendentID *int
 	Status       AdStatus
+	PublishedAt  *time.Time
+	ExpiresAt    *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -56,15 +60,38 @@ type PublishAdInput struct {
 	ChatId int
 }
 
+type RemoveAdInput struct {
+	AdID   string
+	ChatId int
+}
+
+type PublishAdUpdate struct {
+	AdID        string
+	PublishedAt time.Time
+	ExpiresAt   time.Time
+}
+
 type UpdateAdPriceInput struct {
 	AdID         string
 	Price        int64
 	PretendentID int
+	Now          time.Time
 }
 
 type AdPriceUpdate struct {
 	AdID  string
 	Price int64
+}
+
+func (status AdStatus) CanTransitionTo(next AdStatus) bool {
+	switch status {
+	case AdStatusCreated:
+		return next == AdStatusPublished || next == AdStatusRemoved
+	case AdStatusPublished:
+		return next == AdStatusBought || next == AdStatusExpired || next == AdStatusRemoved
+	default:
+		return false
+	}
 }
 
 func (input IncreaseAdPriceInput) Validate() error {
@@ -78,6 +105,16 @@ func (input IncreaseAdPriceInput) Validate() error {
 }
 
 func (input PublishAdInput) Validate() error {
+	if strings.TrimSpace(input.AdID) == "" {
+		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
+	}
+	if input.ChatId <= 0 {
+		return fmt.Errorf("%w: chat_id must be greater than zero", ErrInvalidAd)
+	}
+	return nil
+}
+
+func (input RemoveAdInput) Validate() error {
 	if strings.TrimSpace(input.AdID) == "" {
 		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
 	}

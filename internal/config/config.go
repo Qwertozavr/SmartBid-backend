@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	HTTPAddr            string
-	DatabaseURL         string
-	KafkaBrokers        []string
-	KafkaAdCreatedTopic string
-	KafkaDLQTopic       string
+	HTTPAddr             string
+	DatabaseURL          string
+	KafkaBrokers         []string
+	KafkaAdCreatedTopic  string
+	KafkaAdFinishedTopic string
+	KafkaDLQTopic        string
 }
 
 func Load() Config {
@@ -19,11 +20,12 @@ func Load() Config {
 	servicePort := getEnv("SERVICE_PORT", "8080")
 
 	return Config{
-		HTTPAddr:            buildHTTPAddr(serviceHost, servicePort),
-		DatabaseURL:         buildDatabaseURL(),
-		KafkaBrokers:        splitCSV(getEnv("KAFKA_BROKERS", "localhost:9092")),
-		KafkaAdCreatedTopic: getEnv("KAFKA_AD_CREATED_TOPIC", "ad-created"),
-		KafkaDLQTopic:       getEnv("KAFKA_DLQ_TOPIC", "ad-created-dlq"),
+		HTTPAddr:             buildHTTPAddr(serviceHost, servicePort),
+		DatabaseURL:          buildDatabaseURL(),
+		KafkaBrokers:         splitCSV(getEnv("KAFKA_BROKERS", "localhost:9092")),
+		KafkaAdCreatedTopic:  getEnv("KAFKA_AD_CREATED_TOPIC", "ad-created"),
+		KafkaAdFinishedTopic: getEnv("KAFKA_AD_FINISHED_TOPIC", "ad-finished"),
+		KafkaDLQTopic:        getEnv("KAFKA_DLQ_TOPIC", "ad-created-dlq"),
 	}
 }
 

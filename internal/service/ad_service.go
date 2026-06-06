@@ -4,16 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"smartbid-backend/internal/domain"
 	"smartbid-backend/internal/repository"
 )
 
+const adLifetime = 24 * time.Hour
+
 type AdService struct {
-	ads            repository.AdRepository
-	outbox         repository.OutboxRepository
-	transactor     repository.Transactor
-	adCreatedTopic string
+	ads             repository.AdRepository
+	outbox          repository.OutboxRepository
+	transactor      repository.Transactor
+	adCreatedTopic  string
+	adFinishedTopic string
+	now             func() time.Time
 }
 
 func NewAdService(
@@ -21,17 +26,110 @@ func NewAdService(
 	outbox repository.OutboxRepository,
 	transactor repository.Transactor,
 	adCreatedTopic string,
+	adFinishedTopic string,
 ) *AdService {
 	if adCreatedTopic == "" {
 		adCreatedTopic = domain.AdCreatedTopic
 	}
+	if adFinishedTopic == "" {
+		adFinishedTopic = domain.AdFinishedTopic
+	}
 
 	return &AdService{
-		ads:            ads,
-		outbox:         outbox,
-		transactor:     transactor,
-		adCreatedTopic: adCreatedTopic,
+		ads:             ads,
+		outbox:          outbox,
+		transactor:      transactor,
+		adCreatedTopic:  adCreatedTopic,
+		adFinishedTopic: adFinishedTopic,
+		now:             time.Now,
 	}
+}
+
+func (s *AdService) Remove(ctx context.Context, input domain.RemoveAdInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+
+	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		ad, err := s.ads.FindByIDForUpdate(ctx, input.AdID)
+		if err != nil {
+			return err
+		}
+		if ad.ChatId != input.ChatId {
+			return fmt.Errorf("%w: chat_id does not match ad chat_id", domain.ErrInvalidAd)
+		}
+		if !ad.Status.CanTransitionTo(domain.AdStatusRemoved) {
+			return fmt.Errorf("%w: ad cannot be removed from status %s", domain.ErrInvalidAd, ad.Status)
+		}
+		if err := s.ads.TransitionStatus(ctx, ad.ID, ad.Status, domain.AdStatusRemoved); err != nil {
+			return err
+		}
+		ad.Status = domain.AdStatusRemoved
+		return s.createAdFinishedOutboxEvent(ctx, ad)
+	})
+}
+
+func (s *AdService) CompleteExpired(ctx context.Context, limit int) error {
+	if limit <= 0 {
+		return fmt.Errorf("%w: limit must be greater than zero", domain.ErrInvalidAd)
+	}
+	now := s.now().UTC()
+
+	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		ads, err := s.ads.ClaimExpired(ctx, now, limit)
+		if err != nil {
+			return err
+		}
+		for _, ad := range ads {
+			next := domain.AdStatusExpired
+			if ad.PretendentID != nil {
+				next = domain.AdStatusBought
+			}
+			if !ad.Status.CanTransitionTo(next) {
+				return fmt.Errorf("%w: ad cannot transition from %s to %s", domain.ErrInvalidAd, ad.Status, next)
+			}
+			if err := s.ads.TransitionStatus(ctx, ad.ID, ad.Status, next); err != nil {
+				return err
+			}
+			ad.Status = next
+			if err := s.createAdFinishedOutboxEvent(ctx, ad); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (s *AdService) createAdFinishedOutboxEvent(ctx context.Context, ad domain.Ad) error {
+	eventID, err := domain.NewEventID()
+	if err != nil {
+		return fmt.Errorf("create ad finished event id: %w", err)
+	}
+
+	payload, err := json.Marshal(domain.AdFinishedEvent{
+		EventID:      eventID,
+		AdID:         ad.ID,
+		Status:       ad.Status,
+		PretendentID: ad.PretendentID,
+		FinalPrice:   ad.Price,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal ad finished event: %w", err)
+	}
+
+	if err := s.outbox.Create(ctx, domain.OutboxEvent{
+		ID:            eventID,
+		Topic:         s.adFinishedTopic,
+		EventType:     domain.AdFinishedEventType,
+		AggregateType: "ad",
+		AggregateID:   ad.ID,
+		Payload:       payload,
+		Status:        domain.OutboxEventStatusPending,
+	}); err != nil {
+		return fmt.Errorf("create ad finished outbox event: %w", err)
+	}
+
+	return nil
 }
 
 func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
@@ -69,11 +167,16 @@ func (s *AdService) IncreasePrice(ctx context.Context, input domain.IncreaseAdPr
 	if ad.PretendentID != nil && *ad.PretendentID == input.PretendentID {
 		return domain.AdPriceUpdate{}, fmt.Errorf("%w: pretendent_id must differ from previous pretendent_id", domain.ErrInvalidAd)
 	}
+	now := s.now().UTC()
+	if ad.Status != domain.AdStatusPublished || ad.ExpiresAt == nil || !ad.ExpiresAt.After(now) {
+		return domain.AdPriceUpdate{}, domain.ErrAdNotActive
+	}
 
 	return s.ads.UpdatePrice(ctx, domain.UpdateAdPriceInput{
 		AdID:         input.AdID,
 		Price:        ad.Price * 105 / 100,
 		PretendentID: input.PretendentID,
+		Now:          now,
 	})
 }
 
@@ -89,9 +192,18 @@ func (s *AdService) Publish(ctx context.Context, input domain.PublishAdInput) er
 	if ad.ChatId != input.ChatId {
 		return fmt.Errorf("%w: chat_id does not match ad chat_id", domain.ErrInvalidAd)
 	}
+	if !ad.Status.CanTransitionTo(domain.AdStatusPublished) {
+		return fmt.Errorf("%w: ad cannot be published from status %s", domain.ErrInvalidAd, ad.Status)
+	}
+
+	publishedAt := s.now().UTC()
 
 	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		if err := s.ads.UpdateStatus(ctx, input.AdID, domain.AdStatusPublished); err != nil {
+		if err := s.ads.Publish(ctx, domain.PublishAdUpdate{
+			AdID:        input.AdID,
+			PublishedAt: publishedAt,
+			ExpiresAt:   publishedAt.Add(adLifetime),
+		}); err != nil {
 			return err
 		}
 

@@ -251,6 +251,53 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: failed to publish ad
+  /api/v1/ads/{id}/remove:
+    post:
+      tags:
+        - Ads
+      summary: Remove ad
+      operationId: removeAd
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Ad UUID.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveAdRequest"
+            example:
+              chat_id: 123456789
+      responses:
+        "200":
+          description: Ad was removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid request, chat ID, or state transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Ad was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Failed to remove ad.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     PingResponse:
@@ -315,6 +362,18 @@ components:
           minimum: 1
           description: ID of the chat that owns the ad.
           example: 123456789
+    RemoveAdRequest:
+      type: object
+      required:
+        - chat_id
+      additionalProperties: false
+      properties:
+        chat_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: ID of the chat that owns the ad.
+          example: 123456789
     AdPriceUpdate:
       type: object
       required:
@@ -362,6 +421,8 @@ components:
         - price
         - pretendent_id
         - status
+        - published_at
+        - expires_at
         - created_at
         - updated_at
       properties:
@@ -401,6 +462,16 @@ components:
           example: 123
         status:
           $ref: "#/components/schemas/AdStatus"
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: 2026-06-01T12:00:00Z
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: 2026-06-02T12:00:00Z
         created_at:
           type: string
           format: date-time
@@ -417,6 +488,7 @@ components:
         - canceled
         - bought
         - removed
+        - expired
       example: created
     ErrorResponse:
       type: object

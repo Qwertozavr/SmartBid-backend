@@ -43,6 +43,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		outboxRepository,
 		transactor,
 		cfg.KafkaAdCreatedTopic,
+		cfg.KafkaAdFinishedTopic,
 	)
 
 	appCtx, cancel := context.WithCancel(context.Background())
@@ -51,6 +52,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		publisher,
 		logger,
 		event.OutboxDispatcherConfig{},
+	)
+	expirationWorker := service.NewAdExpirationWorker(
+		adService,
+		logger,
+		service.AdExpirationWorkerConfig{},
 	)
 
 	pingHandler := handler.NewPingHandler()
@@ -73,6 +79,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	go func() {
 		defer application.wg.Done()
 		outboxDispatcher.Run(appCtx)
+	}()
+	application.wg.Add(1)
+	go func() {
+		defer application.wg.Done()
+		expirationWorker.Run(appCtx)
 	}()
 
 	return application, nil

@@ -33,6 +33,7 @@ go.work.sum
 
 bin/
 tmp/
+docs/superpowers/
 
 .DS_Store
 *.log

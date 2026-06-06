@@ -21,6 +21,7 @@ type fakeAdService struct {
 	findByID      func(context.Context, string) (domain.Ad, error)
 	increasePrice func(context.Context, domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error)
 	publish       func(context.Context, domain.PublishAdInput) error
+	remove        func(context.Context, domain.RemoveAdInput) error
 }
 
 func (f *fakeAdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
@@ -49,6 +50,13 @@ func (f *fakeAdService) Publish(ctx context.Context, input domain.PublishAdInput
 		panic("unexpected Publish call")
 	}
 	return f.publish(ctx, input)
+}
+
+func (f *fakeAdService) Remove(ctx context.Context, input domain.RemoveAdInput) error {
+	if f.remove == nil {
+		panic("unexpected Remove call")
+	}
+	return f.remove(ctx, input)
 }
 
 func newTestRouter(ads handler.AdService) http.Handler {
@@ -173,6 +181,35 @@ func TestFindAdByIDReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestFindAdByIDReturnsTimerFields(t *testing.T) {
+	publishedAt := time.Date(2026, time.June, 6, 12, 0, 0, 0, time.UTC)
+	expiresAt := publishedAt.Add(24 * time.Hour)
+	service := &fakeAdService{
+		findByID: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{
+				ID:          id,
+				Title:       "Laptop",
+				Status:      domain.AdStatusPublished,
+				PublishedAt: &publishedAt,
+				ExpiresAt:   &expiresAt,
+			}, nil
+		},
+	}
+
+	response := performRequest(t, newTestRouter(service), http.MethodGet, "/api/v1/ads/ad-1", nil)
+	payload := decodeResponse[struct {
+		PublishedAt *time.Time `json:"published_at"`
+		ExpiresAt   *time.Time `json:"expires_at"`
+	}](t, response)
+
+	if payload.PublishedAt == nil || !payload.PublishedAt.Equal(publishedAt) {
+		t.Fatalf("unexpected published_at: %v", payload.PublishedAt)
+	}
+	if payload.ExpiresAt == nil || !payload.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("unexpected expires_at: %v", payload.ExpiresAt)
+	}
+}
+
 func TestIncreaseAdPriceReturnsUpdatedPrice(t *testing.T) {
 	service := &fakeAdService{
 		increasePrice: func(_ context.Context, input domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error) {
@@ -256,5 +293,28 @@ func TestPublishAdReturnsValidationError(t *testing.T) {
 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+}
+
+func TestRemoveAdReturnsSuccessMessage(t *testing.T) {
+	service := &fakeAdService{
+		remove: func(_ context.Context, input domain.RemoveAdInput) error {
+			if input.AdID != "ad-1" || input.ChatId != 12 {
+				t.Fatalf("unexpected remove input: %#v", input)
+			}
+			return nil
+		},
+	}
+
+	response := performRequest(t, newTestRouter(service), http.MethodPost, "/api/v1/ads/ad-1/remove", []byte(
+		`{"chat_id":12}`,
+	))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+	payload := decodeResponse[map[string]string](t, response)
+	if payload["message"] != "Успешно" {
+		t.Fatalf("unexpected response: %#v", payload)
 	}
 }
