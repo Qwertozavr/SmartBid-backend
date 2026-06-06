@@ -22,6 +22,10 @@ type PublishAdRequest struct {
 	ChatId int `json:"chat_id"`
 }
 
+type RemoveAdRequest struct {
+	ChatId int `json:"chat_id"`
+}
+
 const SuccessMessage = "Успешно"
 
 type SuccessResponse struct {
@@ -48,6 +52,13 @@ func (request IncreaseAdPriceRequest) ToDomainInput(adID string) domain.Increase
 
 func (request PublishAdRequest) ToDomainInput(adID string) domain.PublishAdInput {
 	return domain.PublishAdInput{
+		AdID:   adID,
+		ChatId: request.ChatId,
+	}
+}
+
+func (request RemoveAdRequest) ToDomainInput(adID string) domain.RemoveAdInput {
+	return domain.RemoveAdInput{
 		AdID:   adID,
 		ChatId: request.ChatId,
 	}
