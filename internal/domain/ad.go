@@ -9,6 +9,7 @@ import (
 
 var ErrAdNotFound = errors.New("ad not found")
 var ErrInvalidAd = errors.New("invalid ad")
+var ErrAdNotActive = errors.New("ad is not active")
 
 const MaxAdPhotoBytes = 5 << 20
 
@@ -20,6 +21,7 @@ const (
 	AdStatusCanceled  AdStatus = "canceled"
 	AdStatusBought    AdStatus = "bought"
 	AdStatusRemoved   AdStatus = "removed"
+	AdStatusExpired   AdStatus = "expired"
 )
 
 type Ad struct {
@@ -32,6 +34,8 @@ type Ad struct {
 	Price        int64
 	PretendentID *int
 	Status       AdStatus
+	PublishedAt  *time.Time
+	ExpiresAt    *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -65,6 +69,17 @@ type UpdateAdPriceInput struct {
 type AdPriceUpdate struct {
 	AdID  string
 	Price int64
+}
+
+func (status AdStatus) CanTransitionTo(next AdStatus) bool {
+	switch status {
+	case AdStatusCreated:
+		return next == AdStatusPublished || next == AdStatusRemoved
+	case AdStatusPublished:
+		return next == AdStatusBought || next == AdStatusExpired || next == AdStatusRemoved
+	default:
+		return false
+	}
 }
 
 func (input IncreaseAdPriceInput) Validate() error {
