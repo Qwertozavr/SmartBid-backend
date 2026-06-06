@@ -44,3 +44,6 @@ The project uses distributed programming principles:
 просроченные опубликованные объявления через PostgreSQL `FOR UPDATE SKIP
 LOCKED` и переводит их в `bought` либо `expired`. Ставки используют условное
 обновление и не принимаются после `expires_at`.
+
+Подробное описание сценариев, события завершения и гарантий конкурентности:
+[Жизненный цикл объявлений](ad-lifecycle.md).
