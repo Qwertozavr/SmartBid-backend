@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"smartbid-backend/internal/domain"
 )
@@ -11,6 +12,8 @@ import (
 type fakeAdRepository struct {
 	create       func(context.Context, domain.CreateAdInput) (domain.Ad, error)
 	findByID     func(context.Context, string) (domain.Ad, error)
+	publish      func(context.Context, domain.PublishAdUpdate) error
+	updatePrice  func(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error)
 	updateStatus func(context.Context, string, domain.AdStatus) error
 }
 
@@ -28,12 +31,60 @@ func (f *fakeAdRepository) FindByID(ctx context.Context, id string) (domain.Ad, 
 	return f.findByID(ctx, id)
 }
 
-func (f *fakeAdRepository) Publish(context.Context, domain.PublishAdUpdate) error {
-	panic("unexpected Publish call")
+func (f *fakeAdRepository) Publish(ctx context.Context, input domain.PublishAdUpdate) error {
+	if f.publish == nil {
+		panic("unexpected Publish call")
+	}
+	return f.publish(ctx, input)
 }
 
-func (f *fakeAdRepository) UpdatePrice(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error) {
-	panic("unexpected UpdatePrice call")
+func (f *fakeAdRepository) UpdatePrice(ctx context.Context, input domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error) {
+	if f.updatePrice == nil {
+		panic("unexpected UpdatePrice call")
+	}
+	return f.updatePrice(ctx, input)
+}
+
+func TestPublishSetsFixedTwentyFourHourTimer(t *testing.T) {
+	now := time.Date(2026, time.June, 6, 12, 0, 0, 0, time.UTC)
+	repository := &fakeAdRepository{
+		findByID: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{ID: id, ChatId: 12, Status: domain.AdStatusCreated}, nil
+		},
+		publish: func(_ context.Context, input domain.PublishAdUpdate) error {
+			if !input.PublishedAt.Equal(now) {
+				t.Fatalf("unexpected published_at: %v", input.PublishedAt)
+			}
+			if !input.ExpiresAt.Equal(now.Add(24 * time.Hour)) {
+				t.Fatalf("unexpected expires_at: %v", input.ExpiresAt)
+			}
+			return nil
+		},
+	}
+	service := NewAdService(repository, &fakeOutboxRepository{create: func(context.Context, domain.OutboxEvent) error {
+		return nil
+	}}, &fakeTransactor{}, "")
+	service.now = func() time.Time { return now }
+
+	if err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
+		t.Fatalf("publish ad: %v", err)
+	}
+}
+
+func TestIncreasePriceRejectsExpiredAd(t *testing.T) {
+	now := time.Date(2026, time.June, 7, 12, 0, 0, 0, time.UTC)
+	repository := &fakeAdRepository{
+		findByID: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{ID: id, Status: domain.AdStatusPublished, ExpiresAt: &now}, nil
+		},
+	}
+	service := NewAdService(repository, nil, nil, "")
+	service.now = func() time.Time { return now }
+
+	_, err := service.IncreasePrice(context.Background(), domain.IncreaseAdPriceInput{AdID: "ad-1", PretendentID: 42})
+	if !errors.Is(err, domain.ErrAdNotActive) {
+		t.Fatalf("expected inactive ad error, got %v", err)
+	}
 }
 
 func (f *fakeAdRepository) UpdateStatus(ctx context.Context, id string, status domain.AdStatus) error {
@@ -98,11 +149,11 @@ func TestPublishUpdatesAdStatusAndCreatesOutboxEvent(t *testing.T) {
 	var statusUpdated bool
 	repository := &fakeAdRepository{
 		findByID: func(_ context.Context, id string) (domain.Ad, error) {
-			return domain.Ad{ID: id, ChatId: 12}, nil
+			return domain.Ad{ID: id, ChatId: 12, Status: domain.AdStatusCreated}, nil
 		},
-		updateStatus: func(_ context.Context, id string, status domain.AdStatus) error {
-			if id != "ad-1" || status != domain.AdStatusPublished {
-				t.Fatalf("unexpected status update: id=%q status=%q", id, status)
+		publish: func(_ context.Context, input domain.PublishAdUpdate) error {
+			if input.AdID != "ad-1" {
+				t.Fatalf("unexpected publish update: %#v", input)
 			}
 			statusUpdated = true
 			return nil
@@ -149,9 +200,9 @@ func TestPublishDoesNotCreateOutboxEventWhenStatusUpdateFails(t *testing.T) {
 	updateErr := errors.New("update status")
 	repository := &fakeAdRepository{
 		findByID: func(_ context.Context, id string) (domain.Ad, error) {
-			return domain.Ad{ID: id, ChatId: 12}, nil
+			return domain.Ad{ID: id, ChatId: 12, Status: domain.AdStatusCreated}, nil
 		},
-		updateStatus: func(context.Context, string, domain.AdStatus) error {
+		publish: func(context.Context, domain.PublishAdUpdate) error {
 			return updateErr
 		},
 	}

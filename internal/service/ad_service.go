@@ -4,16 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"smartbid-backend/internal/domain"
 	"smartbid-backend/internal/repository"
 )
+
+const adLifetime = 24 * time.Hour
 
 type AdService struct {
 	ads            repository.AdRepository
 	outbox         repository.OutboxRepository
 	transactor     repository.Transactor
 	adCreatedTopic string
+	now            func() time.Time
 }
 
 func NewAdService(
@@ -31,6 +35,7 @@ func NewAdService(
 		outbox:         outbox,
 		transactor:     transactor,
 		adCreatedTopic: adCreatedTopic,
+		now:            time.Now,
 	}
 }
 
@@ -69,11 +74,16 @@ func (s *AdService) IncreasePrice(ctx context.Context, input domain.IncreaseAdPr
 	if ad.PretendentID != nil && *ad.PretendentID == input.PretendentID {
 		return domain.AdPriceUpdate{}, fmt.Errorf("%w: pretendent_id must differ from previous pretendent_id", domain.ErrInvalidAd)
 	}
+	now := s.now().UTC()
+	if ad.Status != domain.AdStatusPublished || ad.ExpiresAt == nil || !ad.ExpiresAt.After(now) {
+		return domain.AdPriceUpdate{}, domain.ErrAdNotActive
+	}
 
 	return s.ads.UpdatePrice(ctx, domain.UpdateAdPriceInput{
 		AdID:         input.AdID,
 		Price:        ad.Price * 105 / 100,
 		PretendentID: input.PretendentID,
+		Now:          now,
 	})
 }
 
@@ -89,9 +99,18 @@ func (s *AdService) Publish(ctx context.Context, input domain.PublishAdInput) er
 	if ad.ChatId != input.ChatId {
 		return fmt.Errorf("%w: chat_id does not match ad chat_id", domain.ErrInvalidAd)
 	}
+	if !ad.Status.CanTransitionTo(domain.AdStatusPublished) {
+		return fmt.Errorf("%w: ad cannot be published from status %s", domain.ErrInvalidAd, ad.Status)
+	}
+
+	publishedAt := s.now().UTC()
 
 	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		if err := s.ads.UpdateStatus(ctx, input.AdID, domain.AdStatusPublished); err != nil {
+		if err := s.ads.Publish(ctx, domain.PublishAdUpdate{
+			AdID:        input.AdID,
+			PublishedAt: publishedAt,
+			ExpiresAt:   publishedAt.Add(adLifetime),
+		}); err != nil {
 			return err
 		}
 
