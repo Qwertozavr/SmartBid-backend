@@ -52,6 +52,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		logger,
 		event.OutboxDispatcherConfig{},
 	)
+	expirationWorker := service.NewAdExpirationWorker(
+		adService,
+		logger,
+		service.AdExpirationWorkerConfig{},
+	)
 
 	pingHandler := handler.NewPingHandler()
 	adHandler := handler.NewAdHandler(adService)
@@ -73,6 +78,11 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	go func() {
 		defer application.wg.Done()
 		outboxDispatcher.Run(appCtx)
+	}()
+	application.wg.Add(1)
+	go func() {
+		defer application.wg.Done()
+		expirationWorker.Run(appCtx)
 	}()
 
 	return application, nil
