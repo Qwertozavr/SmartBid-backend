@@ -51,6 +51,11 @@ type IncreaseAdPriceInput struct {
 	PretendentID int
 }
 
+type PublishAdInput struct {
+	AdID   string
+	ChatId int
+}
+
 type UpdateAdPriceInput struct {
 	AdID         string
 	Price        int64
@@ -68,6 +73,16 @@ func (input IncreaseAdPriceInput) Validate() error {
 	}
 	if input.PretendentID <= 0 {
 		return fmt.Errorf("%w: pretendent_id must be greater than zero", ErrInvalidAd)
+	}
+	return nil
+}
+
+func (input PublishAdInput) Validate() error {
+	if strings.TrimSpace(input.AdID) == "" {
+		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
+	}
+	if input.ChatId <= 0 {
+		return fmt.Errorf("%w: chat_id must be greater than zero", ErrInvalidAd)
 	}
 	return nil
 }

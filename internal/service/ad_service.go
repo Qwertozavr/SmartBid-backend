@@ -44,20 +44,7 @@ func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (dom
 
 	input.Status = domain.AdStatusCreated
 
-	var ad domain.Ad
-	err := s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
-		createdAd, err := s.ads.Create(ctx, input)
-		if err != nil {
-			return err
-		}
-
-		if err := s.createAdCreatedOutboxEvent(ctx, createdAd.ID); err != nil {
-			return err
-		}
-
-		ad = createdAd
-		return nil
-	})
+	ad, err := s.ads.Create(ctx, input)
 	if err != nil {
 		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
@@ -87,6 +74,28 @@ func (s *AdService) IncreasePrice(ctx context.Context, input domain.IncreaseAdPr
 		AdID:         input.AdID,
 		Price:        ad.Price * 105 / 100,
 		PretendentID: input.PretendentID,
+	})
+}
+
+func (s *AdService) Publish(ctx context.Context, input domain.PublishAdInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+
+	ad, err := s.ads.FindByID(ctx, input.AdID)
+	if err != nil {
+		return err
+	}
+	if ad.ChatId != input.ChatId {
+		return fmt.Errorf("%w: chat_id does not match ad chat_id", domain.ErrInvalidAd)
+	}
+
+	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		if err := s.ads.UpdateStatus(ctx, input.AdID, domain.AdStatusPublished); err != nil {
+			return err
+		}
+
+		return s.createAdCreatedOutboxEvent(ctx, input.AdID)
 	})
 }
 

@@ -17,6 +17,7 @@ type AdService interface {
 	Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error)
 	FindByID(ctx context.Context, id string) (domain.Ad, error)
 	IncreasePrice(ctx context.Context, input domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error)
+	Publish(ctx context.Context, input domain.PublishAdInput) error
 }
 
 type AdHandler struct {
@@ -52,7 +53,7 @@ func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, dto.NewAdResponse(ad))
+	writeJSON(w, http.StatusCreated, dto.NewCreateAdResponse(ad))
 }
 
 func (h *AdHandler) FindByID(w http.ResponseWriter, r *http.Request) {
@@ -114,4 +115,42 @@ func (h *AdHandler) IncreasePrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, dto.NewAdPriceUpdateResponse(priceUpdate))
+}
+
+func (h *AdHandler) Publish(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	var request dto.PublishAdRequest
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	err := h.ads.Publish(ctx, request.ToDomainInput(id))
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidAd) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, domain.ErrAdNotFound) {
+			writeError(w, http.StatusNotFound, "ad not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to publish ad")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, dto.NewSuccessResponse())
 }

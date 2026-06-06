@@ -20,6 +20,7 @@ type fakeAdService struct {
 	create        func(context.Context, domain.CreateAdInput) (domain.Ad, error)
 	findByID      func(context.Context, string) (domain.Ad, error)
 	increasePrice func(context.Context, domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error)
+	publish       func(context.Context, domain.PublishAdInput) error
 }
 
 func (f *fakeAdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
@@ -41,6 +42,13 @@ func (f *fakeAdService) IncreasePrice(ctx context.Context, input domain.Increase
 		panic("unexpected IncreasePrice call")
 	}
 	return f.increasePrice(ctx, input)
+}
+
+func (f *fakeAdService) Publish(ctx context.Context, input domain.PublishAdInput) error {
+	if f.publish == nil {
+		panic("unexpected Publish call")
+	}
+	return f.publish(ctx, input)
 }
 
 func newTestRouter(ads handler.AdService) http.Handler {
@@ -119,12 +127,13 @@ func TestCreateAdReturnsCreatedAd(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, response.Code, response.Body.String())
 	}
 	payload := decodeResponse[struct {
-		ID     string          `json:"id"`
-		Title  string          `json:"title"`
-		Price  int64           `json:"price"`
-		Status domain.AdStatus `json:"status"`
+		ID      string          `json:"id"`
+		Title   string          `json:"title"`
+		Price   int64           `json:"price"`
+		Status  domain.AdStatus `json:"status"`
+		Message string          `json:"message"`
 	}](t, response)
-	if payload.ID != expected.ID || payload.Title != expected.Title || payload.Price != expected.Price || payload.Status != expected.Status {
+	if payload.ID != expected.ID || payload.Title != expected.Title || payload.Price != expected.Price || payload.Status != expected.Status || payload.Message != "Успешно" {
 		t.Fatalf("unexpected response: %#v", payload)
 	}
 }
@@ -182,10 +191,11 @@ func TestIncreaseAdPriceReturnsUpdatedPrice(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
 	}
 	payload := decodeResponse[struct {
-		ID    string `json:"id"`
-		Price int64  `json:"price"`
+		ID      string `json:"id"`
+		Price   int64  `json:"price"`
+		Message string `json:"message"`
 	}](t, response)
-	if payload.ID != "ad-1" || payload.Price != 105 {
+	if payload.ID != "ad-1" || payload.Price != 105 || payload.Message != "Успешно" {
 		t.Fatalf("unexpected response: %#v", payload)
 	}
 }
@@ -207,5 +217,44 @@ func TestIncreaseAdPriceReturnsValidationError(t *testing.T) {
 	payload := decodeResponse[map[string]string](t, response)
 	if payload["error"] == "" {
 		t.Fatalf("expected validation error, got %#v", payload)
+	}
+}
+
+func TestPublishAdReturnsSuccessMessage(t *testing.T) {
+	service := &fakeAdService{
+		publish: func(_ context.Context, input domain.PublishAdInput) error {
+			if input.AdID != "ad-1" || input.ChatId != 12 {
+				t.Fatalf("unexpected publish input: %#v", input)
+			}
+			return nil
+		},
+	}
+
+	response := performRequest(t, newTestRouter(service), http.MethodPost, "/api/v1/ads/ad-1/publish", []byte(
+		`{"chat_id":12}`,
+	))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+	}
+	payload := decodeResponse[map[string]string](t, response)
+	if payload["message"] != "Успешно" {
+		t.Fatalf("unexpected response: %#v", payload)
+	}
+}
+
+func TestPublishAdReturnsValidationError(t *testing.T) {
+	service := &fakeAdService{
+		publish: func(_ context.Context, _ domain.PublishAdInput) error {
+			return errors.Join(domain.ErrInvalidAd, errors.New("chat_id does not match ad chat_id"))
+		},
+	}
+
+	response := performRequest(t, newTestRouter(service), http.MethodPost, "/api/v1/ads/ad-1/publish", []byte(
+		`{"chat_id":13}`,
+	))
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
 	}
 }
