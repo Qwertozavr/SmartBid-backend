@@ -26,14 +26,13 @@ func NewAdService(
 	outbox repository.OutboxRepository,
 	transactor repository.Transactor,
 	adCreatedTopic string,
-	adFinishedTopics ...string,
+	adFinishedTopic string,
 ) *AdService {
 	if adCreatedTopic == "" {
 		adCreatedTopic = domain.AdCreatedTopic
 	}
-	adFinishedTopic := domain.AdFinishedTopic
-	if len(adFinishedTopics) > 0 && adFinishedTopics[0] != "" {
-		adFinishedTopic = adFinishedTopics[0]
+	if adFinishedTopic == "" {
+		adFinishedTopic = domain.AdFinishedTopic
 	}
 
 	return &AdService{

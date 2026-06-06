@@ -66,7 +66,7 @@ func TestPublishSetsFixedTwentyFourHourTimer(t *testing.T) {
 	}
 	service := NewAdService(repository, &fakeOutboxRepository{create: func(context.Context, domain.OutboxEvent) error {
 		return nil
-	}}, &fakeTransactor{}, "")
+	}}, &fakeTransactor{}, "", "")
 	service.now = func() time.Time { return now }
 
 	if err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
@@ -81,7 +81,7 @@ func TestIncreasePriceRejectsExpiredAd(t *testing.T) {
 			return domain.Ad{ID: id, Status: domain.AdStatusPublished, ExpiresAt: &now}, nil
 		},
 	}
-	service := NewAdService(repository, nil, nil, "")
+	service := NewAdService(repository, nil, nil, "", "")
 	service.now = func() time.Time { return now }
 
 	_, err := service.IncreasePrice(context.Background(), domain.IncreaseAdPriceInput{AdID: "ad-1", PretendentID: 42})
@@ -151,7 +151,7 @@ func TestCreateDoesNotCreateOutboxEvent(t *testing.T) {
 			return domain.Ad{ID: "ad-1", Title: input.Title}, nil
 		},
 	}
-	service := NewAdService(repository, nil, nil, "")
+	service := NewAdService(repository, nil, nil, "", "")
 
 	ad, err := service.Create(context.Background(), domain.CreateAdInput{Title: "title"})
 	if err != nil {
@@ -192,7 +192,7 @@ func TestPublishUpdatesAdStatusAndCreatesOutboxEvent(t *testing.T) {
 			return fn(ctx)
 		},
 	}
-	service := NewAdService(repository, outbox, transactor, "")
+	service := NewAdService(repository, outbox, transactor, "", "")
 
 	if err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
 		t.Fatalf("publish ad: %v", err)
@@ -205,7 +205,7 @@ func TestPublishRejectsDifferentChatID(t *testing.T) {
 			return domain.Ad{ID: id, ChatId: 12}, nil
 		},
 	}
-	service := NewAdService(repository, nil, nil, "")
+	service := NewAdService(repository, nil, nil, "", "")
 
 	err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 13})
 	if !errors.Is(err, domain.ErrInvalidAd) {
@@ -223,7 +223,7 @@ func TestPublishDoesNotCreateOutboxEventWhenStatusUpdateFails(t *testing.T) {
 			return updateErr
 		},
 	}
-	service := NewAdService(repository, nil, &fakeTransactor{}, "")
+	service := NewAdService(repository, nil, &fakeTransactor{}, "", "")
 
 	err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 12})
 	if !errors.Is(err, updateErr) {
@@ -265,7 +265,7 @@ func TestRemoveTransitionsAndCreatesFinishedEvent(t *testing.T) {
 			return nil
 		},
 	}
-	service := NewAdService(repository, outbox, &fakeTransactor{}, "")
+	service := NewAdService(repository, outbox, &fakeTransactor{}, "", "")
 
 	if err := service.Remove(context.Background(), domain.RemoveAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
 		t.Fatalf("remove ad: %v", err)
@@ -305,7 +305,7 @@ func TestCompleteExpiredChoosesTerminalStatusAndCreatesEvents(t *testing.T) {
 			return nil
 		},
 	}
-	service := NewAdService(repository, outbox, &fakeTransactor{}, "")
+	service := NewAdService(repository, outbox, &fakeTransactor{}, "", "")
 	service.now = func() time.Time { return now }
 
 	if err := service.CompleteExpired(context.Background(), 10); err != nil {
