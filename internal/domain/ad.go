@@ -60,10 +60,17 @@ type PublishAdInput struct {
 	ChatId int
 }
 
+type PublishAdUpdate struct {
+	AdID        string
+	PublishedAt time.Time
+	ExpiresAt   time.Time
+}
+
 type UpdateAdPriceInput struct {
 	AdID         string
 	Price        int64
 	PretendentID int
+	Now          time.Time
 }
 
 type AdPriceUpdate struct {

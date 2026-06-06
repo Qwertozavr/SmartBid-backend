@@ -28,6 +28,10 @@ func (f *fakeAdRepository) FindByID(ctx context.Context, id string) (domain.Ad, 
 	return f.findByID(ctx, id)
 }
 
+func (f *fakeAdRepository) Publish(context.Context, domain.PublishAdUpdate) error {
+	panic("unexpected Publish call")
+}
+
 func (f *fakeAdRepository) UpdatePrice(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error) {
 	panic("unexpected UpdatePrice call")
 }

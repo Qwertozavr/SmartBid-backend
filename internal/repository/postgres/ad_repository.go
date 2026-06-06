@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/doug-martin/goqu/v9"
 	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
@@ -38,6 +39,13 @@ func adPretendentIDValue(pretendentID sql.NullInt64) *int {
 	return &value
 }
 
+func adTimeValue(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Time
+}
+
 func createAdQuery(input domain.CreateAdInput) (string, []any, error) {
 	return goquPostgresDialect.
 		Insert("ads").
@@ -60,6 +68,8 @@ func createAdQuery(input domain.CreateAdInput) (string, []any, error) {
 			goqu.L("coalesce(photo, ''::bytea)"),
 			"final_price",
 			"pretendent_id",
+			"published_at",
+			"expires_at",
 			"created_at",
 			"updated_at",
 		).
@@ -76,14 +86,18 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 	var ad domain.Ad
 	var description string
 	var pretendentID sql.NullInt64
+	var publishedAt sql.NullTime
+	var expiresAt sql.NullTime
 	err = executor(ctx, r.pool).QueryRow(ctx, query, args...).
-		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &ad.CreatedAt, &ad.UpdatedAt)
+		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &publishedAt, &expiresAt, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		return domain.Ad{}, err
 	}
 
 	ad.Description = &description
 	ad.PretendentID = adPretendentIDValue(pretendentID)
+	ad.PublishedAt = adTimeValue(publishedAt)
+	ad.ExpiresAt = adTimeValue(expiresAt)
 	ad.Status = domain.AdStatusCreated
 
 	return ad, nil
@@ -102,6 +116,8 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 			goqu.I("ads.final_price"),
 			goqu.I("ads.pretendent_id"),
 			goqu.I("ad_status.slug"),
+			goqu.I("ads.published_at"),
+			goqu.I("ads.expires_at"),
 			goqu.I("ads.created_at"),
 			goqu.I("ads.updated_at"),
 		).
@@ -119,8 +135,10 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 	var ad domain.Ad
 	var description string
 	var pretendentID sql.NullInt64
+	var publishedAt sql.NullTime
+	var expiresAt sql.NullTime
 	err = executor(ctx, r.pool).QueryRow(ctx, query, args...).
-		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &ad.Status, &ad.CreatedAt, &ad.UpdatedAt)
+		Scan(&ad.ID, &ad.Title, &ad.ChatId, &ad.MessageId, &description, &ad.Photo, &ad.Price, &pretendentID, &ad.Status, &publishedAt, &expiresAt, &ad.CreatedAt, &ad.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Ad{}, domain.ErrAdNotFound
@@ -130,8 +148,44 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 
 	ad.Description = &description
 	ad.PretendentID = adPretendentIDValue(pretendentID)
+	ad.PublishedAt = adTimeValue(publishedAt)
+	ad.ExpiresAt = adTimeValue(expiresAt)
 
 	return ad, nil
+}
+
+func publishAdQuery(input domain.PublishAdUpdate) (string, []any, error) {
+	return goquPostgresDialect.
+		Update("ads").
+		Set(goqu.Record{
+			"status_id":    goqu.L("(select id from ad_status where slug = ?)", domain.AdStatusPublished),
+			"published_at": input.PublishedAt,
+			"expires_at":   input.ExpiresAt,
+			"updated_at":   goqu.L("now()"),
+		}).
+		Where(
+			goqu.I("id").Eq(input.AdID),
+			goqu.I("status_id").Eq(goqu.L("(select id from ad_status where slug = ?)", domain.AdStatusCreated)),
+		).
+		Prepared(true).
+		ToSQL()
+}
+
+func (r *AdRepository) Publish(ctx context.Context, input domain.PublishAdUpdate) error {
+	query, args, err := publishAdQuery(input)
+	if err != nil {
+		return err
+	}
+
+	commandTag, err := executor(ctx, r.pool).Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if commandTag.RowsAffected() == 0 {
+		return domain.ErrAdNotActive
+	}
+
+	return nil
 }
 
 func updateAdPriceQuery(input domain.UpdateAdPriceInput) (string, []any, error) {
@@ -142,7 +196,11 @@ func updateAdPriceQuery(input domain.UpdateAdPriceInput) (string, []any, error) 
 			"pretendent_id": input.PretendentID,
 			"updated_at":    goqu.L("now()"),
 		}).
-		Where(goqu.I("id").Eq(input.AdID)).
+		Where(
+			goqu.I("id").Eq(input.AdID),
+			goqu.I("expires_at").Gt(input.Now),
+			goqu.I("status_id").Eq(goqu.L("(select id from ad_status where slug = ?)", domain.AdStatusPublished)),
+		).
 		Returning(
 			goqu.L("id::text"),
 			"final_price",
@@ -162,7 +220,7 @@ func (r *AdRepository) UpdatePrice(ctx context.Context, input domain.UpdateAdPri
 		Scan(&update.AdID, &update.Price)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.AdPriceUpdate{}, domain.ErrAdNotFound
+			return domain.AdPriceUpdate{}, domain.ErrAdNotActive
 		}
 		return domain.AdPriceUpdate{}, err
 	}
