@@ -96,29 +96,6 @@ func TestUpdateAdPriceQueryStoresFinalPriceAndPretendent(t *testing.T) {
 	}
 }
 
-func TestUpdateAdStatusQueryUsesProvidedStatus(t *testing.T) {
-	query, args, err := updateAdStatusQuery("ad-id", domain.AdStatusPublished)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !strings.Contains(query, `(select id from ad_status where slug = $`) {
-		t.Fatalf("expected scalar status subquery, got query: %s", query)
-	}
-	if !strings.Contains(query, `"updated_at"=now()`) {
-		t.Fatalf("expected updated_at to be updated, got query: %s", query)
-	}
-	if len(args) != 2 {
-		t.Fatalf("expected 2 query args, got %d: %#v", len(args), args)
-	}
-	if fmt.Sprint(args[0]) != string(domain.AdStatusPublished) {
-		t.Fatalf("expected published status arg, got %#v", args[0])
-	}
-	if args[1] != "ad-id" {
-		t.Fatalf("expected ad id arg, got %#v", args[1])
-	}
-}
-
 func TestFindAdByIDForUpdateQueryLocksRow(t *testing.T) {
 	query, _, err := findAdByIDQuery("ad-id", true)
 	if err != nil {

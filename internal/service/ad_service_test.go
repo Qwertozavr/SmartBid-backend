@@ -15,7 +15,6 @@ type fakeAdRepository struct {
 	findByID      func(context.Context, string) (domain.Ad, error)
 	publish       func(context.Context, domain.PublishAdUpdate) error
 	updatePrice   func(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error)
-	updateStatus  func(context.Context, string, domain.AdStatus) error
 	findForUpdate func(context.Context, string) (domain.Ad, error)
 	transition    func(context.Context, string, domain.AdStatus, domain.AdStatus) error
 	claimExpired  func(context.Context, time.Time, int) ([]domain.Ad, error)
@@ -89,13 +88,6 @@ func TestIncreasePriceRejectsExpiredAd(t *testing.T) {
 	if !errors.Is(err, domain.ErrAdNotActive) {
 		t.Fatalf("expected inactive ad error, got %v", err)
 	}
-}
-
-func (f *fakeAdRepository) UpdateStatus(ctx context.Context, id string, status domain.AdStatus) error {
-	if f.updateStatus == nil {
-		panic("unexpected UpdateStatus call")
-	}
-	return f.updateStatus(ctx, id, status)
 }
 
 func (f *fakeAdRepository) FindByIDForUpdate(ctx context.Context, id string) (domain.Ad, error) {

@@ -247,18 +247,6 @@ func (r *AdRepository) UpdatePrice(ctx context.Context, input domain.UpdateAdPri
 	return update, nil
 }
 
-func updateAdStatusQuery(id string, status domain.AdStatus) (string, []any, error) {
-	return goquPostgresDialect.
-		Update("ads").
-		Set(goqu.Record{
-			"status_id":  goqu.L("(select id from ad_status where slug = ?)", status),
-			"updated_at": goqu.L("now()"),
-		}).
-		Where(goqu.I("id").Eq(id)).
-		Prepared(true).
-		ToSQL()
-}
-
 func transitionAdStatusQuery(id string, from, to domain.AdStatus) (string, []any, error) {
 	return goquPostgresDialect.
 		Update("ads").
