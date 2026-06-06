@@ -181,6 +181,35 @@ func TestFindAdByIDReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestFindAdByIDReturnsTimerFields(t *testing.T) {
+	publishedAt := time.Date(2026, time.June, 6, 12, 0, 0, 0, time.UTC)
+	expiresAt := publishedAt.Add(24 * time.Hour)
+	service := &fakeAdService{
+		findByID: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{
+				ID:          id,
+				Title:       "Laptop",
+				Status:      domain.AdStatusPublished,
+				PublishedAt: &publishedAt,
+				ExpiresAt:   &expiresAt,
+			}, nil
+		},
+	}
+
+	response := performRequest(t, newTestRouter(service), http.MethodGet, "/api/v1/ads/ad-1", nil)
+	payload := decodeResponse[struct {
+		PublishedAt *time.Time `json:"published_at"`
+		ExpiresAt   *time.Time `json:"expires_at"`
+	}](t, response)
+
+	if payload.PublishedAt == nil || !payload.PublishedAt.Equal(publishedAt) {
+		t.Fatalf("unexpected published_at: %v", payload.PublishedAt)
+	}
+	if payload.ExpiresAt == nil || !payload.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("unexpected expires_at: %v", payload.ExpiresAt)
+	}
+}
+
 func TestIncreaseAdPriceReturnsUpdatedPrice(t *testing.T) {
 	service := &fakeAdService{
 		increasePrice: func(_ context.Context, input domain.IncreaseAdPriceInput) (domain.AdPriceUpdate, error) {

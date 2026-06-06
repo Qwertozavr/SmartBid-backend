@@ -96,6 +96,8 @@ type AdResponse struct {
 	Price        int64           `json:"price"`
 	PretendentID *int            `json:"pretendent_id"`
 	Status       domain.AdStatus `json:"status"`
+	PublishedAt  *time.Time      `json:"published_at"`
+	ExpiresAt    *time.Time      `json:"expires_at"`
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
@@ -111,6 +113,8 @@ func NewAdResponse(ad domain.Ad) AdResponse {
 		Price:        ad.Price,
 		PretendentID: ad.PretendentID,
 		Status:       ad.Status,
+		PublishedAt:  ad.PublishedAt,
+		ExpiresAt:    ad.ExpiresAt,
 		CreatedAt:    ad.CreatedAt,
 		UpdatedAt:    ad.UpdatedAt,
 	}

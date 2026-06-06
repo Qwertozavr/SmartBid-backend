@@ -43,6 +43,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		outboxRepository,
 		transactor,
 		cfg.KafkaAdCreatedTopic,
+		cfg.KafkaAdFinishedTopic,
 	)
 
 	appCtx, cancel := context.WithCancel(context.Background())
