@@ -118,3 +118,26 @@ func TestUpdateAdStatusQueryUsesProvidedStatus(t *testing.T) {
 		t.Fatalf("expected ad id arg, got %#v", args[1])
 	}
 }
+
+func TestFindAdByIDForUpdateQueryLocksRow(t *testing.T) {
+	query, _, err := findAdByIDQuery("ad-id", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(query, " FOR UPDATE") {
+		t.Fatalf("expected row lock, got query: %s", query)
+	}
+}
+
+func TestTransitionAdStatusQueryRequiresSourceStatus(t *testing.T) {
+	query, args, err := transitionAdStatusQuery("ad-id", domain.AdStatusPublished, domain.AdStatusRemoved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, `"status_id" = (select id from ad_status where slug = $`) {
+		t.Fatalf("expected source status guard, got query: %s", query)
+	}
+	if len(args) != 3 {
+		t.Fatalf("expected target status, ad id, and source status args, got %#v", args)
+	}
+}

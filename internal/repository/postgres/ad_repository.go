@@ -104,6 +104,14 @@ func (r *AdRepository) Create(ctx context.Context, input domain.CreateAdInput) (
 }
 
 func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, error) {
+	return r.findByID(ctx, id, false)
+}
+
+func (r *AdRepository) FindByIDForUpdate(ctx context.Context, id string) (domain.Ad, error) {
+	return r.findByID(ctx, id, true)
+}
+
+func findAdByIDQuery(id string, forUpdate bool) (string, []any, error) {
 	query, args, err := goquPostgresDialect.
 		From("ads").
 		Select(
@@ -128,6 +136,17 @@ func (r *AdRepository) FindByID(ctx context.Context, id string) (domain.Ad, erro
 		Where(goqu.I("ads.id").Eq(id)).
 		Prepared(true).
 		ToSQL()
+	if err != nil {
+		return "", nil, err
+	}
+	if forUpdate {
+		query += " FOR UPDATE"
+	}
+	return query, args, nil
+}
+
+func (r *AdRepository) findByID(ctx context.Context, id string, forUpdate bool) (domain.Ad, error) {
+	query, args, err := findAdByIDQuery(id, forUpdate)
 	if err != nil {
 		return domain.Ad{}, err
 	}
@@ -240,8 +259,23 @@ func updateAdStatusQuery(id string, status domain.AdStatus) (string, []any, erro
 		ToSQL()
 }
 
-func (r *AdRepository) UpdateStatus(ctx context.Context, id string, status domain.AdStatus) error {
-	query, args, err := updateAdStatusQuery(id, status)
+func transitionAdStatusQuery(id string, from, to domain.AdStatus) (string, []any, error) {
+	return goquPostgresDialect.
+		Update("ads").
+		Set(goqu.Record{
+			"status_id":  goqu.L("(select id from ad_status where slug = ?)", to),
+			"updated_at": goqu.L("now()"),
+		}).
+		Where(
+			goqu.I("id").Eq(id),
+			goqu.I("status_id").Eq(goqu.L("(select id from ad_status where slug = ?)", from)),
+		).
+		Prepared(true).
+		ToSQL()
+}
+
+func (r *AdRepository) TransitionStatus(ctx context.Context, id string, from, to domain.AdStatus) error {
+	query, args, err := transitionAdStatusQuery(id, from, to)
 	if err != nil {
 		return err
 	}
@@ -251,7 +285,7 @@ func (r *AdRepository) UpdateStatus(ctx context.Context, id string, status domai
 		return err
 	}
 	if commandTag.RowsAffected() == 0 {
-		return domain.ErrAdNotFound
+		return domain.ErrAdNotActive
 	}
 
 	return nil

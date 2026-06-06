@@ -13,11 +13,12 @@ import (
 const adLifetime = 24 * time.Hour
 
 type AdService struct {
-	ads            repository.AdRepository
-	outbox         repository.OutboxRepository
-	transactor     repository.Transactor
-	adCreatedTopic string
-	now            func() time.Time
+	ads             repository.AdRepository
+	outbox          repository.OutboxRepository
+	transactor      repository.Transactor
+	adCreatedTopic  string
+	adFinishedTopic string
+	now             func() time.Time
 }
 
 func NewAdService(
@@ -31,12 +32,69 @@ func NewAdService(
 	}
 
 	return &AdService{
-		ads:            ads,
-		outbox:         outbox,
-		transactor:     transactor,
-		adCreatedTopic: adCreatedTopic,
-		now:            time.Now,
+		ads:             ads,
+		outbox:          outbox,
+		transactor:      transactor,
+		adCreatedTopic:  adCreatedTopic,
+		adFinishedTopic: domain.AdFinishedTopic,
+		now:             time.Now,
 	}
+}
+
+func (s *AdService) Remove(ctx context.Context, input domain.RemoveAdInput) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+
+	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		ad, err := s.ads.FindByIDForUpdate(ctx, input.AdID)
+		if err != nil {
+			return err
+		}
+		if ad.ChatId != input.ChatId {
+			return fmt.Errorf("%w: chat_id does not match ad chat_id", domain.ErrInvalidAd)
+		}
+		if !ad.Status.CanTransitionTo(domain.AdStatusRemoved) {
+			return fmt.Errorf("%w: ad cannot be removed from status %s", domain.ErrInvalidAd, ad.Status)
+		}
+		if err := s.ads.TransitionStatus(ctx, ad.ID, ad.Status, domain.AdStatusRemoved); err != nil {
+			return err
+		}
+		ad.Status = domain.AdStatusRemoved
+		return s.createAdFinishedOutboxEvent(ctx, ad)
+	})
+}
+
+func (s *AdService) createAdFinishedOutboxEvent(ctx context.Context, ad domain.Ad) error {
+	eventID, err := domain.NewEventID()
+	if err != nil {
+		return fmt.Errorf("create ad finished event id: %w", err)
+	}
+
+	payload, err := json.Marshal(domain.AdFinishedEvent{
+		EventID:      eventID,
+		AdID:         ad.ID,
+		Status:       ad.Status,
+		PretendentID: ad.PretendentID,
+		FinalPrice:   ad.Price,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal ad finished event: %w", err)
+	}
+
+	if err := s.outbox.Create(ctx, domain.OutboxEvent{
+		ID:            eventID,
+		Topic:         s.adFinishedTopic,
+		EventType:     domain.AdFinishedEventType,
+		AggregateType: "ad",
+		AggregateID:   ad.ID,
+		Payload:       payload,
+		Status:        domain.OutboxEventStatusPending,
+	}); err != nil {
+		return fmt.Errorf("create ad finished outbox event: %w", err)
+	}
+
+	return nil
 }
 
 func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {

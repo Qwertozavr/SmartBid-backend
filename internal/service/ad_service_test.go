@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -10,11 +11,13 @@ import (
 )
 
 type fakeAdRepository struct {
-	create       func(context.Context, domain.CreateAdInput) (domain.Ad, error)
-	findByID     func(context.Context, string) (domain.Ad, error)
-	publish      func(context.Context, domain.PublishAdUpdate) error
-	updatePrice  func(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error)
-	updateStatus func(context.Context, string, domain.AdStatus) error
+	create        func(context.Context, domain.CreateAdInput) (domain.Ad, error)
+	findByID      func(context.Context, string) (domain.Ad, error)
+	publish       func(context.Context, domain.PublishAdUpdate) error
+	updatePrice   func(context.Context, domain.UpdateAdPriceInput) (domain.AdPriceUpdate, error)
+	updateStatus  func(context.Context, string, domain.AdStatus) error
+	findForUpdate func(context.Context, string) (domain.Ad, error)
+	transition    func(context.Context, string, domain.AdStatus, domain.AdStatus) error
 }
 
 func (f *fakeAdRepository) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
@@ -92,6 +95,20 @@ func (f *fakeAdRepository) UpdateStatus(ctx context.Context, id string, status d
 		panic("unexpected UpdateStatus call")
 	}
 	return f.updateStatus(ctx, id, status)
+}
+
+func (f *fakeAdRepository) FindByIDForUpdate(ctx context.Context, id string) (domain.Ad, error) {
+	if f.findForUpdate == nil {
+		panic("unexpected FindByIDForUpdate call")
+	}
+	return f.findForUpdate(ctx, id)
+}
+
+func (f *fakeAdRepository) TransitionStatus(ctx context.Context, id string, from, to domain.AdStatus) error {
+	if f.transition == nil {
+		panic("unexpected TransitionStatus call")
+	}
+	return f.transition(ctx, id, from, to)
 }
 
 type fakeOutboxRepository struct {
@@ -211,5 +228,46 @@ func TestPublishDoesNotCreateOutboxEventWhenStatusUpdateFails(t *testing.T) {
 	err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 12})
 	if !errors.Is(err, updateErr) {
 		t.Fatalf("expected update error, got %v", err)
+	}
+}
+
+func TestRemoveTransitionsAndCreatesFinishedEvent(t *testing.T) {
+	var transitioned bool
+	repository := &fakeAdRepository{
+		findForUpdate: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{
+				ID:     id,
+				ChatId: 12,
+				Price:  105,
+				Status: domain.AdStatusPublished,
+			}, nil
+		},
+		transition: func(_ context.Context, id string, from, to domain.AdStatus) error {
+			if id != "ad-1" || from != domain.AdStatusPublished || to != domain.AdStatusRemoved {
+				t.Fatalf("unexpected transition: %s %s -> %s", id, from, to)
+			}
+			transitioned = true
+			return nil
+		},
+	}
+	outbox := &fakeOutboxRepository{
+		create: func(_ context.Context, event domain.OutboxEvent) error {
+			if !transitioned {
+				t.Fatal("expected transition before outbox event")
+			}
+			var payload domain.AdFinishedEvent
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.AdID != "ad-1" || payload.Status != domain.AdStatusRemoved || payload.PretendentID != nil || payload.FinalPrice != 105 {
+				t.Fatalf("unexpected payload: %#v", payload)
+			}
+			return nil
+		},
+	}
+	service := NewAdService(repository, outbox, &fakeTransactor{}, "")
+
+	if err := service.Remove(context.Background(), domain.RemoveAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
+		t.Fatalf("remove ad: %v", err)
 	}
 }

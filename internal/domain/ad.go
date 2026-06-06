@@ -60,6 +60,11 @@ type PublishAdInput struct {
 	ChatId int
 }
 
+type RemoveAdInput struct {
+	AdID   string
+	ChatId int
+}
+
 type PublishAdUpdate struct {
 	AdID        string
 	PublishedAt time.Time
@@ -100,6 +105,16 @@ func (input IncreaseAdPriceInput) Validate() error {
 }
 
 func (input PublishAdInput) Validate() error {
+	if strings.TrimSpace(input.AdID) == "" {
+		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
+	}
+	if input.ChatId <= 0 {
+		return fmt.Errorf("%w: chat_id must be greater than zero", ErrInvalidAd)
+	}
+	return nil
+}
+
+func (input RemoveAdInput) Validate() error {
 	if strings.TrimSpace(input.AdID) == "" {
 		return fmt.Errorf("%w: ad id is required", ErrInvalidAd)
 	}
