@@ -290,3 +290,73 @@ func (r *AdRepository) TransitionStatus(ctx context.Context, id string, from, to
 
 	return nil
 }
+
+func claimExpiredAdsQuery() string {
+	return `
+		select
+			ads.id::text,
+			ads.title,
+			ads.chat_id,
+			ads.message_id,
+			ads.description,
+			coalesce(ads.photo, ''::bytea),
+			ads.final_price,
+			ads.pretendent_id,
+			ad_status.slug,
+			ads.published_at,
+			ads.expires_at,
+			ads.created_at,
+			ads.updated_at
+		from ads
+		join ad_status on ad_status.id = ads.status_id
+		where ad_status.slug = $1
+			and ads.expires_at <= $2
+		order by ads.expires_at
+		limit $3
+		for update skip locked
+	`
+}
+
+func (r *AdRepository) ClaimExpired(ctx context.Context, now time.Time, limit int) ([]domain.Ad, error) {
+	rows, err := executor(ctx, r.pool).Query(ctx, claimExpiredAdsQuery(), domain.AdStatusPublished, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ads := make([]domain.Ad, 0, limit)
+	for rows.Next() {
+		var ad domain.Ad
+		var description string
+		var pretendentID sql.NullInt64
+		var publishedAt sql.NullTime
+		var expiresAt sql.NullTime
+		if err := rows.Scan(
+			&ad.ID,
+			&ad.Title,
+			&ad.ChatId,
+			&ad.MessageId,
+			&description,
+			&ad.Photo,
+			&ad.Price,
+			&pretendentID,
+			&ad.Status,
+			&publishedAt,
+			&expiresAt,
+			&ad.CreatedAt,
+			&ad.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		ad.Description = &description
+		ad.PretendentID = adPretendentIDValue(pretendentID)
+		ad.PublishedAt = adTimeValue(publishedAt)
+		ad.ExpiresAt = adTimeValue(expiresAt)
+		ads = append(ads, ad)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ads, nil
+}

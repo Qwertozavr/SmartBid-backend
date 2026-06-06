@@ -65,6 +65,37 @@ func (s *AdService) Remove(ctx context.Context, input domain.RemoveAdInput) erro
 	})
 }
 
+func (s *AdService) CompleteExpired(ctx context.Context, limit int) error {
+	if limit <= 0 {
+		return fmt.Errorf("%w: limit must be greater than zero", domain.ErrInvalidAd)
+	}
+	now := s.now().UTC()
+
+	return s.transactor.WithinTransaction(ctx, func(ctx context.Context) error {
+		ads, err := s.ads.ClaimExpired(ctx, now, limit)
+		if err != nil {
+			return err
+		}
+		for _, ad := range ads {
+			next := domain.AdStatusExpired
+			if ad.PretendentID != nil {
+				next = domain.AdStatusBought
+			}
+			if !ad.Status.CanTransitionTo(next) {
+				return fmt.Errorf("%w: ad cannot transition from %s to %s", domain.ErrInvalidAd, ad.Status, next)
+			}
+			if err := s.ads.TransitionStatus(ctx, ad.ID, ad.Status, next); err != nil {
+				return err
+			}
+			ad.Status = next
+			if err := s.createAdFinishedOutboxEvent(ctx, ad); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *AdService) createAdFinishedOutboxEvent(ctx context.Context, ad domain.Ad) error {
 	eventID, err := domain.NewEventID()
 	if err != nil {

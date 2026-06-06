@@ -18,6 +18,7 @@ type fakeAdRepository struct {
 	updateStatus  func(context.Context, string, domain.AdStatus) error
 	findForUpdate func(context.Context, string) (domain.Ad, error)
 	transition    func(context.Context, string, domain.AdStatus, domain.AdStatus) error
+	claimExpired  func(context.Context, time.Time, int) ([]domain.Ad, error)
 }
 
 func (f *fakeAdRepository) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
@@ -109,6 +110,13 @@ func (f *fakeAdRepository) TransitionStatus(ctx context.Context, id string, from
 		panic("unexpected TransitionStatus call")
 	}
 	return f.transition(ctx, id, from, to)
+}
+
+func (f *fakeAdRepository) ClaimExpired(ctx context.Context, now time.Time, limit int) ([]domain.Ad, error) {
+	if f.claimExpired == nil {
+		panic("unexpected ClaimExpired call")
+	}
+	return f.claimExpired(ctx, now, limit)
 }
 
 type fakeOutboxRepository struct {
@@ -269,5 +277,52 @@ func TestRemoveTransitionsAndCreatesFinishedEvent(t *testing.T) {
 
 	if err := service.Remove(context.Background(), domain.RemoveAdInput{AdID: "ad-1", ChatId: 12}); err != nil {
 		t.Fatalf("remove ad: %v", err)
+	}
+}
+
+func TestCompleteExpiredChoosesTerminalStatusAndCreatesEvents(t *testing.T) {
+	now := time.Date(2026, time.June, 7, 12, 0, 0, 0, time.UTC)
+	pretendentID := 42
+	transitions := map[string]domain.AdStatus{}
+	repository := &fakeAdRepository{
+		claimExpired: func(_ context.Context, gotNow time.Time, limit int) ([]domain.Ad, error) {
+			if !gotNow.Equal(now) || limit != 10 {
+				t.Fatalf("unexpected claim: now=%v limit=%d", gotNow, limit)
+			}
+			return []domain.Ad{
+				{ID: "with-winner", Status: domain.AdStatusPublished, PretendentID: &pretendentID, Price: 105},
+				{ID: "without-winner", Status: domain.AdStatusPublished, Price: 100},
+			}, nil
+		},
+		transition: func(_ context.Context, id string, from, to domain.AdStatus) error {
+			if from != domain.AdStatusPublished {
+				t.Fatalf("unexpected source status: %s", from)
+			}
+			transitions[id] = to
+			return nil
+		},
+	}
+	events := map[string]domain.AdFinishedEvent{}
+	outbox := &fakeOutboxRepository{
+		create: func(_ context.Context, event domain.OutboxEvent) error {
+			var payload domain.AdFinishedEvent
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			events[payload.AdID] = payload
+			return nil
+		},
+	}
+	service := NewAdService(repository, outbox, &fakeTransactor{}, "")
+	service.now = func() time.Time { return now }
+
+	if err := service.CompleteExpired(context.Background(), 10); err != nil {
+		t.Fatalf("complete expired: %v", err)
+	}
+	if transitions["with-winner"] != domain.AdStatusBought || transitions["without-winner"] != domain.AdStatusExpired {
+		t.Fatalf("unexpected transitions: %#v", transitions)
+	}
+	if events["with-winner"].Status != domain.AdStatusBought || events["without-winner"].Status != domain.AdStatusExpired {
+		t.Fatalf("unexpected events: %#v", events)
 	}
 }

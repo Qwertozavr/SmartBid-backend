@@ -141,3 +141,18 @@ func TestTransitionAdStatusQueryRequiresSourceStatus(t *testing.T) {
 		t.Fatalf("expected target status, ad id, and source status args, got %#v", args)
 	}
 }
+
+func TestClaimExpiredAdsQueryLocksPublishedRows(t *testing.T) {
+	query := claimExpiredAdsQuery()
+	for _, expected := range []string{
+		"ad_status.slug = $1",
+		"ads.expires_at <= $2",
+		"order by ads.expires_at",
+		"limit $3",
+		"for update skip locked",
+	} {
+		if !strings.Contains(query, expected) {
+			t.Fatalf("expected %q in query: %s", expected, query)
+		}
+	}
+}
