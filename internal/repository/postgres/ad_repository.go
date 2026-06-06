@@ -169,3 +169,32 @@ func (r *AdRepository) UpdatePrice(ctx context.Context, input domain.UpdateAdPri
 
 	return update, nil
 }
+
+func updateAdStatusQuery(id string, status domain.AdStatus) (string, []any, error) {
+	return goquPostgresDialect.
+		Update("ads").
+		Set(goqu.Record{
+			"status_id":  goqu.L("(select id from ad_status where slug = ?)", status),
+			"updated_at": goqu.L("now()"),
+		}).
+		Where(goqu.I("id").Eq(id)).
+		Prepared(true).
+		ToSQL()
+}
+
+func (r *AdRepository) UpdateStatus(ctx context.Context, id string, status domain.AdStatus) error {
+	query, args, err := updateAdStatusQuery(id, status)
+	if err != nil {
+		return err
+	}
+
+	commandTag, err := executor(ctx, r.pool).Exec(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	if commandTag.RowsAffected() == 0 {
+		return domain.ErrAdNotFound
+	}
+
+	return nil
+}

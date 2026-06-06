@@ -18,9 +18,25 @@ type IncreaseAdPriceRequest struct {
 	PretendentID int `json:"pretendent_id"`
 }
 
+type PublishAdRequest struct {
+	ChatId int `json:"chat_id"`
+}
+
+const SuccessMessage = "Успешно"
+
+type SuccessResponse struct {
+	Message string `json:"message"`
+}
+
+type CreateAdResponse struct {
+	AdResponse
+	Message string `json:"message"`
+}
+
 type AdPriceUpdateResponse struct {
-	ID    string `json:"id"`
-	Price int64  `json:"price"`
+	ID      string `json:"id"`
+	Price   int64  `json:"price"`
+	Message string `json:"message"`
 }
 
 func (request IncreaseAdPriceRequest) ToDomainInput(adID string) domain.IncreaseAdPriceInput {
@@ -30,11 +46,23 @@ func (request IncreaseAdPriceRequest) ToDomainInput(adID string) domain.Increase
 	}
 }
 
+func (request PublishAdRequest) ToDomainInput(adID string) domain.PublishAdInput {
+	return domain.PublishAdInput{
+		AdID:   adID,
+		ChatId: request.ChatId,
+	}
+}
+
 func NewAdPriceUpdateResponse(update domain.AdPriceUpdate) AdPriceUpdateResponse {
 	return AdPriceUpdateResponse{
-		ID:    update.AdID,
-		Price: update.Price,
+		ID:      update.AdID,
+		Price:   update.Price,
+		Message: SuccessMessage,
 	}
+}
+
+func NewSuccessResponse() SuccessResponse {
+	return SuccessResponse{Message: SuccessMessage}
 }
 
 func (request CreateAdRequest) ToDomainInput() domain.CreateAdInput {
@@ -74,5 +102,12 @@ func NewAdResponse(ad domain.Ad) AdResponse {
 		Status:       ad.Status,
 		CreatedAt:    ad.CreatedAt,
 		UpdatedAt:    ad.UpdatedAt,
+	}
+}
+
+func NewCreateAdResponse(ad domain.Ad) CreateAdResponse {
+	return CreateAdResponse{
+		AdResponse: NewAdResponse(ad),
+		Message:    SuccessMessage,
 	}
 }

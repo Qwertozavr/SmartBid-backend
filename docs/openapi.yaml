@@ -60,7 +60,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Ad"
+                $ref: "#/components/schemas/CreateAdResponse"
         "400":
           description: Invalid request body or invalid ad data.
           content:
@@ -127,7 +127,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: failed to find ad
-  /api/v1/ad/{id}/increase:
+  /api/v1/ads/{id}/increase:
     post:
       tags:
         - Ads
@@ -190,6 +190,67 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: failed to increase ad price
+  /api/v1/ads/{id}/publish:
+    post:
+      tags:
+        - Ads
+      summary: Publish ad
+      operationId: publishAd
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Ad UUID.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishAdRequest"
+            example:
+              chat_id: 123456789
+      responses:
+        "200":
+          description: Ad was published.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "400":
+          description: Invalid request body, chat ID, or ad data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidBody:
+                  value:
+                    error: invalid request body
+                invalidChatId:
+                  value:
+                    error: "invalid ad: chat_id must be greater than zero"
+                differentChatId:
+                  value:
+                    error: "invalid ad: chat_id does not match ad chat_id"
+        "404":
+          description: Ad was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: ad not found
+        "500":
+          description: Failed to publish ad.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: failed to publish ad
 components:
   schemas:
     PingResponse:
@@ -242,11 +303,24 @@ components:
           minimum: 1
           description: ID of the latest user who offered the price.
           example: 123
+    PublishAdRequest:
+      type: object
+      required:
+        - chat_id
+      additionalProperties: false
+      properties:
+        chat_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: ID of the chat that owns the ad.
+          example: 123456789
     AdPriceUpdate:
       type: object
       required:
         - id
         - price
+        - message
       properties:
         id:
           type: string
@@ -256,6 +330,27 @@ components:
           type: integer
           format: int64
           example: 105
+        message:
+          type: string
+          example: Успешно
+    SuccessResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: Успешно
+    CreateAdResponse:
+      allOf:
+        - $ref: "#/components/schemas/Ad"
+        - type: object
+          required:
+            - message
+          properties:
+            message:
+              type: string
+              example: Успешно
     Ad:
       type: object
       required:
