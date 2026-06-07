@@ -75,6 +75,21 @@ curl http://localhost:8080/ping
 {"status":"ok"}
 ```
 
+## Проверки качества
+
+Для запуска линтера установите `golangci-lint`:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+```
+
+Запуск линтера и тестов:
+
+```bash
+make lint
+make test
+```
+
 ## API
 
 - `GET /ping` - health-check приложения.

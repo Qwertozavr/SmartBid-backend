@@ -33,7 +33,9 @@ func (t *Transactor) WithinTransaction(ctx context.Context, fn func(ctx context.
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	txCtx := context.WithValue(ctx, txContextKey{}, tx)
 	if err := fn(txCtx); err != nil {
