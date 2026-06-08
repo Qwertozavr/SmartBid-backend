@@ -119,7 +119,9 @@ make test
 make coverage
 ```
 
-Команда `make coverage` запускает тесты и выводит общий процент покрытия.
+`make coverage` измеряет покрытие бизнес-пакетов `internal/domain`,
+`internal/service` и `internal/price/...`. Команда завершается ошибкой, если
+общее покрытие ниже 80%.
 
 ## API
 

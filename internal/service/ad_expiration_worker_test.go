@@ -51,3 +51,18 @@ func TestAdExpirationWorkerRunsImmediatelyAndOnInterval(t *testing.T) {
 		t.Fatal("worker did not stop")
 	}
 }
+
+func TestNewAdExpirationWorkerUsesDefaults(t *testing.T) {
+	worker := NewAdExpirationWorker(
+		&fakeExpiredCompleter{calls: make(chan int, 1)},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		AdExpirationWorkerConfig{},
+	)
+
+	if worker.interval != time.Minute {
+		t.Fatalf("interval = %v, want %v", worker.interval, time.Minute)
+	}
+	if worker.batchSize != 100 {
+		t.Fatalf("batch size = %d, want 100", worker.batchSize)
+	}
+}

@@ -527,3 +527,169 @@ func TestCompleteExpiredChoosesTerminalStatusAndCreatesEvents(t *testing.T) {
 		t.Fatalf("unexpected events: %#v", events)
 	}
 }
+
+func TestFindByIDDelegatesToRepository(t *testing.T) {
+	repository := &fakeAdRepository{
+		findByID: func(_ context.Context, id string) (domain.Ad, error) {
+			return domain.Ad{ID: id}, nil
+		},
+	}
+	service := NewAdService(repository, nil, nil, nil, "", "")
+
+	ad, err := service.FindByID(context.Background(), "ad-1")
+	if err != nil || ad.ID != "ad-1" {
+		t.Fatalf("unexpected result: ad=%#v err=%v", ad, err)
+	}
+}
+
+func TestRemoveRejectsInvalidOperations(t *testing.T) {
+	repositoryErr := errors.New("find ad")
+	transitionErr := errors.New("transition ad")
+	tests := []struct {
+		name       string
+		input      domain.RemoveAdInput
+		repository *fakeAdRepository
+		wantErr    error
+	}{
+		{name: "invalid input", input: domain.RemoveAdInput{}, repository: &fakeAdRepository{}, wantErr: domain.ErrInvalidAd},
+		{name: "repository error", input: domain.RemoveAdInput{AdID: "ad-1", ChatId: 1}, repository: &fakeAdRepository{
+			findForUpdate: func(context.Context, string) (domain.Ad, error) { return domain.Ad{}, repositoryErr },
+		}, wantErr: repositoryErr},
+		{name: "different chat", input: domain.RemoveAdInput{AdID: "ad-1", ChatId: 1}, repository: &fakeAdRepository{
+			findForUpdate: func(context.Context, string) (domain.Ad, error) {
+				return domain.Ad{ChatId: 2, Status: domain.AdStatusCreated}, nil
+			},
+		}, wantErr: domain.ErrInvalidAd},
+		{name: "terminal status", input: domain.RemoveAdInput{AdID: "ad-1", ChatId: 1}, repository: &fakeAdRepository{
+			findForUpdate: func(context.Context, string) (domain.Ad, error) {
+				return domain.Ad{ChatId: 1, Status: domain.AdStatusRemoved}, nil
+			},
+		}, wantErr: domain.ErrInvalidAd},
+		{name: "transition error", input: domain.RemoveAdInput{AdID: "ad-1", ChatId: 1}, repository: &fakeAdRepository{
+			findForUpdate: func(context.Context, string) (domain.Ad, error) {
+				return domain.Ad{ID: "ad-1", ChatId: 1, Status: domain.AdStatusCreated}, nil
+			},
+			transition: func(context.Context, string, domain.AdStatus, domain.AdStatus) error { return transitionErr },
+		}, wantErr: transitionErr},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewAdService(tt.repository, nil, nil, &fakeTransactor{}, "", "")
+			err := service.Remove(context.Background(), tt.input)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestRemoveReturnsOutboxError(t *testing.T) {
+	outboxErr := errors.New("create outbox event")
+	repository := &fakeAdRepository{
+		findForUpdate: func(context.Context, string) (domain.Ad, error) {
+			return domain.Ad{ID: "ad-1", ChatId: 1, Status: domain.AdStatusCreated}, nil
+		},
+		transition: func(context.Context, string, domain.AdStatus, domain.AdStatus) error { return nil },
+	}
+	outbox := &fakeOutboxRepository{create: func(context.Context, domain.OutboxEvent) error { return outboxErr }}
+	service := NewAdService(repository, nil, outbox, &fakeTransactor{}, "", "")
+
+	err := service.Remove(context.Background(), domain.RemoveAdInput{AdID: "ad-1", ChatId: 1})
+	if !errors.Is(err, outboxErr) {
+		t.Fatalf("expected outbox error, got %v", err)
+	}
+}
+
+func TestCompleteExpiredRejectsInvalidOperations(t *testing.T) {
+	claimErr := errors.New("claim expired")
+	transitionErr := errors.New("transition ad")
+	outboxErr := errors.New("create outbox event")
+	tests := []struct {
+		name       string
+		limit      int
+		repository *fakeAdRepository
+		outbox     *fakeOutboxRepository
+		wantErr    error
+	}{
+		{name: "invalid limit", repository: &fakeAdRepository{}, wantErr: domain.ErrInvalidAd},
+		{name: "claim error", limit: 1, repository: &fakeAdRepository{
+			claimExpired: func(context.Context, time.Time, int) ([]domain.Ad, error) { return nil, claimErr },
+		}, wantErr: claimErr},
+		{name: "invalid transition", limit: 1, repository: &fakeAdRepository{
+			claimExpired: func(context.Context, time.Time, int) ([]domain.Ad, error) {
+				return []domain.Ad{{Status: domain.AdStatusRemoved}}, nil
+			},
+		}, wantErr: domain.ErrInvalidAd},
+		{name: "transition error", limit: 1, repository: &fakeAdRepository{
+			claimExpired: func(context.Context, time.Time, int) ([]domain.Ad, error) {
+				return []domain.Ad{{Status: domain.AdStatusPublished}}, nil
+			},
+			transition: func(context.Context, string, domain.AdStatus, domain.AdStatus) error { return transitionErr },
+		}, wantErr: transitionErr},
+		{name: "outbox error", limit: 1, repository: &fakeAdRepository{
+			claimExpired: func(context.Context, time.Time, int) ([]domain.Ad, error) {
+				return []domain.Ad{{Status: domain.AdStatusPublished}}, nil
+			},
+			transition: func(context.Context, string, domain.AdStatus, domain.AdStatus) error { return nil },
+		}, outbox: &fakeOutboxRepository{
+			create: func(context.Context, domain.OutboxEvent) error { return outboxErr },
+		}, wantErr: outboxErr},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewAdService(tt.repository, nil, tt.outbox, &fakeTransactor{}, "", "")
+			err := service.CompleteExpired(context.Background(), tt.limit)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("expected %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestIncreasePriceRejectsPreviousPretendent(t *testing.T) {
+	pretendentID := 42
+	repository := &fakeAdRepository{
+		findByID: func(context.Context, string) (domain.Ad, error) {
+			return domain.Ad{PretendentID: &pretendentID}, nil
+		},
+	}
+	service := NewAdService(repository, nil, nil, nil, "", "")
+
+	_, err := service.IncreasePrice(context.Background(), domain.IncreaseAdPriceInput{AdID: "ad-1", PretendentID: pretendentID})
+	if !errors.Is(err, domain.ErrInvalidAd) {
+		t.Fatalf("expected invalid ad error, got %v", err)
+	}
+}
+
+func TestPublishRejectsInvalidStatusAndReturnsOutboxError(t *testing.T) {
+	t.Run("invalid status", func(t *testing.T) {
+		repository := &fakeAdRepository{
+			findByID: func(context.Context, string) (domain.Ad, error) {
+				return domain.Ad{ChatId: 1, Status: domain.AdStatusRemoved}, nil
+			},
+		}
+		service := NewAdService(repository, nil, nil, nil, "", "")
+		err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 1})
+		if !errors.Is(err, domain.ErrInvalidAd) {
+			t.Fatalf("expected invalid ad error, got %v", err)
+		}
+	})
+
+	t.Run("outbox error", func(t *testing.T) {
+		outboxErr := errors.New("create outbox event")
+		repository := &fakeAdRepository{
+			findByID: func(context.Context, string) (domain.Ad, error) {
+				return domain.Ad{ChatId: 1, Status: domain.AdStatusCreated}, nil
+			},
+			publish: func(context.Context, domain.PublishAdUpdate) error { return nil },
+		}
+		outbox := &fakeOutboxRepository{create: func(context.Context, domain.OutboxEvent) error { return outboxErr }}
+		service := NewAdService(repository, nil, outbox, &fakeTransactor{}, "", "")
+		err := service.Publish(context.Background(), domain.PublishAdInput{AdID: "ad-1", ChatId: 1})
+		if !errors.Is(err, outboxErr) {
+			t.Fatalf("expected outbox error, got %v", err)
+		}
+	})
+}
