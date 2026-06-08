@@ -40,7 +40,7 @@ func Load() Config {
 		KafkaDLQTopic:        getEnv("KAFKA_DLQ_TOPIC", "ad-created-dlq"),
 		OpenRouterAPIKey:     os.Getenv("OPENROUTER_API_KEY"),
 		OpenRouterBaseURL:    getEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-		OpenRouterModel:      getEnv("OPENROUTER_MODEL", "openrouter/free"),
+		OpenRouterModel:      getEnv("OPENROUTER_MODEL", "nvidia/nemotron-nano-12b-v2-vl:free"),
 		OpenRouterTimeout:    getDurationEnv("OPENROUTER_TIMEOUT", 45*time.Second),
 	}
 }

@@ -27,7 +27,7 @@ func TestLoadDefaultsOpenRouterConfig(t *testing.T) {
 	if cfg.OpenRouterBaseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("unexpected base URL: %q", cfg.OpenRouterBaseURL)
 	}
-	if cfg.OpenRouterModel != "openrouter/free" {
+	if cfg.OpenRouterModel != "nvidia/nemotron-nano-12b-v2-vl:free" {
 		t.Fatalf("unexpected model: %q", cfg.OpenRouterModel)
 	}
 	if cfg.OpenRouterTimeout != 45*time.Second {

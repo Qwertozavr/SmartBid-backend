@@ -45,7 +45,7 @@ KAFKA_DLQ_TOPIC=ad-created-dlq
 
 OPENROUTER_API_KEY=your-openrouter-api-key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=openrouter/free
+OPENROUTER_MODEL=nvidia/nemotron-nano-12b-v2-vl:free
 OPENROUTER_TIMEOUT=45s
 ```
 
@@ -58,7 +58,7 @@ OPENROUTER_TIMEOUT=45s
 `KAFKA_DLQ_TOPIC` - топик для событий, которые не удалось доставить после повторных попыток.
 `OPENROUTER_API_KEY` - обязательный API-ключ OpenRouter. Без него приложение не запустится, в том числе через Docker Compose.
 `OPENROUTER_BASE_URL` - URL API OpenRouter, по умолчанию `https://openrouter.ai/api/v1`.
-`OPENROUTER_MODEL` - модель для оценки цены, по умолчанию `openrouter/free`, который выбирает доступную бесплатную модель.
+`OPENROUTER_MODEL` - бесплатная мультимодальная модель для оценки цены, по умолчанию `nvidia/nemotron-nano-12b-v2-vl:free`.
 `OPENROUTER_TIMEOUT` - таймаут запроса к OpenRouter, по умолчанию `45s`.
 
 ### Получение OpenRouter API key

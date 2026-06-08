@@ -15,12 +15,12 @@ services:
       DB_SSLMODE: "${DB_SSLMODE}"
       DATABASE_URL: "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DB_SSLMODE}"
       KAFKA_BROKERS: "${KAFKA_BROKERS}"
-      KAFKA_AD_CREATED_TOPIC: "${KAFKA_AD_CREATED_TOPIC}"
-      KAFKA_AD_FINISHED_TOPIC: "${KAFKA_AD_FINISHED_TOPIC}"
-      KAFKA_DLQ_TOPIC: "${KAFKA_DLQ_TOPIC}"
+      KAFKA_AD_CREATED_TOPIC: "${KAFKA_AD_CREATED_TOPIC:-ad-created}"
+      KAFKA_AD_FINISHED_TOPIC: "${KAFKA_AD_FINISHED_TOPIC:-ad-finished}"
+      KAFKA_DLQ_TOPIC: "${KAFKA_DLQ_TOPIC:-ad-created-dlq}"
       OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
       OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
-      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-openrouter/free}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-nvidia/nemotron-nano-12b-v2-vl:free}"
       OPENROUTER_TIMEOUT: "${OPENROUTER_TIMEOUT:-45s}"
       MIGRATIONS_DIR: "/app/migrations"
     ports:
@@ -89,17 +89,17 @@ services:
       - >
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
         --create --if-not-exists
-        --topic ${KAFKA_AD_CREATED_TOPIC}
+        --topic ${KAFKA_AD_CREATED_TOPIC:-ad-created}
         --partitions 1
         --replication-factor 1 &&
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
         --create --if-not-exists
-        --topic ${KAFKA_AD_FINISHED_TOPIC}
+        --topic ${KAFKA_AD_FINISHED_TOPIC:-ad-finished}
         --partitions 1
         --replication-factor 1 &&
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
         --create --if-not-exists
-        --topic ${KAFKA_DLQ_TOPIC}
+        --topic ${KAFKA_DLQ_TOPIC:-ad-created-dlq}
         --partitions 1
         --replication-factor 1
 
