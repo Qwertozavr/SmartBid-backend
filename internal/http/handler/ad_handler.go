@@ -22,11 +22,15 @@ type AdService interface {
 }
 
 type AdHandler struct {
-	ads AdService
+	ads           AdService
+	createTimeout time.Duration
 }
 
-func NewAdHandler(ads AdService) *AdHandler {
-	return &AdHandler{ads: ads}
+func NewAdHandler(ads AdService, createTimeout time.Duration) *AdHandler {
+	return &AdHandler{
+		ads:           ads,
+		createTimeout: createTimeout,
+	}
 }
 
 func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +45,7 @@ func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), h.createTimeout)
 	defer cancel()
 
 	ad, err := h.ads.Create(ctx, request.ToDomainInput())
