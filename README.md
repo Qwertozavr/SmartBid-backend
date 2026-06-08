@@ -42,6 +42,11 @@ KAFKA_HOST_PORT=9092
 KAFKA_AD_CREATED_TOPIC=ad-created
 KAFKA_AD_FINISHED_TOPIC=ad-finished
 KAFKA_DLQ_TOPIC=ad-created-dlq
+
+OPENROUTER_API_KEY=your-openrouter-api-key
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_TIMEOUT=45s
 ```
 
 `DB_PORT` - порт PostgreSQL внутри Docker-сети, по нему backend подключается к контейнеру `db`.
@@ -51,6 +56,29 @@ KAFKA_DLQ_TOPIC=ad-created-dlq
 `KAFKA_AD_CREATED_TOPIC` - топик для событий о создании объявлений.
 `KAFKA_AD_FINISHED_TOPIC` - топик для событий о завершении объявлений.
 `KAFKA_DLQ_TOPIC` - топик для событий, которые не удалось доставить после повторных попыток.
+`OPENROUTER_API_KEY` - обязательный API-ключ OpenRouter. Без него приложение не запустится, в том числе через Docker Compose.
+`OPENROUTER_BASE_URL` - URL API OpenRouter, по умолчанию `https://openrouter.ai/api/v1`.
+`OPENROUTER_MODEL` - модель для оценки цены, по умолчанию `openrouter/free`, который выбирает доступную бесплатную модель.
+`OPENROUTER_TIMEOUT` - таймаут запроса к OpenRouter, по умолчанию `45s`.
+
+### Получение OpenRouter API key
+
+1. Зарегистрируйтесь или войдите на [OpenRouter](https://openrouter.ai/).
+2. Откройте страницу [API Keys](https://openrouter.ai/settings/keys).
+3. Нажмите `Create API Key`.
+4. Укажите имя ключа, например `SmartBid Backend`.
+5. Скопируйте созданный ключ вида `sk-or-v1-...`.
+6. Запишите его в `.env`:
+
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-key
+```
+
+OpenRouter показывает полный ключ только при создании. Не добавляйте `.env`
+и API-ключи в Git. Если ключ случайно попал в логи, чат или репозиторий,
+удалите его в OpenRouter и создайте новый.
+
+Внешний сервис и бесплатная модель могут быть недоступны или завершить запрос ошибкой; в этом случае применяется описанная ниже резервная цена.
 
 ```bash
 docker compose up --build
@@ -99,6 +127,8 @@ make test
 - `POST /api/v1/ads/{id}/publish` - публикация объявления и запуск таймера.
 - `POST /api/v1/ads/{id}/remove` - удаление объявления с проверкой `chat_id`.
 
-Создание объявления поддерживает `application/json` с полями `title`, `description` и `photo`. Поле `photo` передаётся как `[]byte`, поэтому в JSON кодируется стандартно для Go - base64-строкой.
+Создание объявления поддерживает `application/json` с полями `title`, `description` и `photo`. Поле `photo` передаётся как `[]byte`, поэтому в JSON кодируется стандартно для Go - base64-строкой. При создании backend отправляет заголовок, описание и необязательное фото во внешний OpenRouter для оценки цены. Провайдер возвращает внутреннее поле `recommended_price` как целое количество рублей; backend умножает его на `100`, так как существующее поле `Price` в базе данных и API хранится в копейках. Новое поле `recommended_price` в модели или API не добавляется.
+
+При обычной ошибке сети или провайдера, включая собственный таймаут OpenRouter-клиента, а также при некорректной, неположительной или приводящей к переполнению оценке используется резервная цена `100` копеек. Отмена запроса или превышение дедлайна его контекста прерывает создание объявления без записи в базу данных. Write timeout HTTP-сервера должен оставлять достаточно времени для оценки цены и последующего создания объявления.
 Поднятие цены принимает `application/json` с полем `pretendent_id` и возвращает идентификатор объявления с новой ценой.
 Подробнее о таймере, переходах статусов и событии `ad.finished`: [Жизненный цикл объявлений](docs/ad-lifecycle.md).

@@ -28,7 +28,7 @@ func main() {
 		Addr:         cfg.HTTPAddr,
 		Handler:      application.Handler(),
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: config.ServerWriteTimeout(cfg.OpenRouterTimeout),
 		IdleTimeout:  60 * time.Second,
 	}
 

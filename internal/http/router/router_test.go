@@ -24,6 +24,8 @@ type fakeAdService struct {
 	remove        func(context.Context, domain.RemoveAdInput) error
 }
 
+type requestContextKey struct{}
+
 func (f *fakeAdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
 	if f.create == nil {
 		panic("unexpected Create call")
@@ -60,10 +62,14 @@ func (f *fakeAdService) Remove(ctx context.Context, input domain.RemoveAdInput) 
 }
 
 func newTestRouter(ads handler.AdService) http.Handler {
+	return newTestRouterWithCreateTimeout(ads, 25*time.Second)
+}
+
+func newTestRouterWithCreateTimeout(ads handler.AdService, createTimeout time.Duration) http.Handler {
 	return New(Dependencies{
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		PingHandler: handler.NewPingHandler(),
-		AdHandler:   handler.NewAdHandler(ads),
+		AdHandler:   handler.NewAdHandler(ads, createTimeout),
 	})
 }
 
@@ -143,6 +149,41 @@ func TestCreateAdReturnsCreatedAd(t *testing.T) {
 	}](t, response)
 	if payload.ID != expected.ID || payload.Title != expected.Title || payload.Price != expected.Price || payload.Status != expected.Status || payload.Message != "Успешно" {
 		t.Fatalf("unexpected response: %#v", payload)
+	}
+}
+
+func TestCreateAdUsesConfiguredDeadline(t *testing.T) {
+	const createTimeout = 40 * time.Second
+
+	requestContext := context.WithValue(context.Background(), requestContextKey{}, "request-value")
+	service := &fakeAdService{
+		create: func(ctx context.Context, _ domain.CreateAdInput) (domain.Ad, error) {
+			deadline, hasDeadline := ctx.Deadline()
+			if !hasDeadline {
+				t.Fatal("expected Create to receive a deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining < createTimeout-time.Second || remaining > createTimeout {
+				t.Fatalf("deadline remaining = %s, want approximately %s", remaining, createTimeout)
+			}
+			if remaining < 30*time.Second {
+				t.Fatalf("deadline remaining = %s, appears to use a fixed short timeout", remaining)
+			}
+			if ctx.Value(requestContextKey{}) != "request-value" {
+				t.Fatal("expected request context values to propagate")
+			}
+			return domain.Ad{}, nil
+		},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/ads", bytes.NewReader([]byte(
+		`{"title":"Laptop","chat_id":12,"message_id":34}`,
+	))).WithContext(requestContext)
+	response := httptest.NewRecorder()
+
+	newTestRouterWithCreateTimeout(service, createTimeout).ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, response.Code, response.Body.String())
 	}
 }
 

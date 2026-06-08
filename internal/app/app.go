@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	eventkafka "smartbid-backend/internal/event/kafka"
 	"smartbid-backend/internal/http/handler"
 	"smartbid-backend/internal/http/router"
+	"smartbid-backend/internal/price/openrouter"
 	"smartbid-backend/internal/repository/postgres"
 	"smartbid-backend/internal/service"
 	"smartbid-backend/pkg/database"
@@ -26,6 +28,16 @@ type App struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
+	priceEstimator, err := openrouter.NewClient(openrouter.Config{
+		APIKey:  cfg.OpenRouterAPIKey,
+		BaseURL: cfg.OpenRouterBaseURL,
+		Model:   cfg.OpenRouterModel,
+		Timeout: cfg.OpenRouterTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create openrouter client: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -40,6 +52,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	publisher := eventkafka.NewPublisher(cfg.KafkaBrokers, cfg.KafkaDLQTopic)
 	adService := service.NewAdService(
 		adRepository,
+		priceEstimator,
 		outboxRepository,
 		transactor,
 		cfg.KafkaAdCreatedTopic,
@@ -60,7 +73,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	)
 
 	pingHandler := handler.NewPingHandler()
-	adHandler := handler.NewAdHandler(adService)
+	adHandler := handler.NewAdHandler(adService, config.CreateAdTimeout(cfg.OpenRouterTimeout))
 
 	httpHandler := router.New(router.Dependencies{
 		Logger:      logger,

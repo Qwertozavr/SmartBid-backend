@@ -4,6 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
+)
+
+const (
+	createAdMinimumTimeout    = 25 * time.Second
+	createAdPersistenceMargin = 10 * time.Second
+	serverWriteMargin         = 5 * time.Second
+	maxDuration               = time.Duration(1<<63 - 1)
 )
 
 type Config struct {
@@ -13,6 +21,10 @@ type Config struct {
 	KafkaAdCreatedTopic  string
 	KafkaAdFinishedTopic string
 	KafkaDLQTopic        string
+	OpenRouterAPIKey     string
+	OpenRouterBaseURL    string
+	OpenRouterModel      string
+	OpenRouterTimeout    time.Duration
 }
 
 func Load() Config {
@@ -26,7 +38,31 @@ func Load() Config {
 		KafkaAdCreatedTopic:  getEnv("KAFKA_AD_CREATED_TOPIC", "ad-created"),
 		KafkaAdFinishedTopic: getEnv("KAFKA_AD_FINISHED_TOPIC", "ad-finished"),
 		KafkaDLQTopic:        getEnv("KAFKA_DLQ_TOPIC", "ad-created-dlq"),
+		OpenRouterAPIKey:     os.Getenv("OPENROUTER_API_KEY"),
+		OpenRouterBaseURL:    getEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+		OpenRouterModel:      getEnv("OPENROUTER_MODEL", "openrouter/free"),
+		OpenRouterTimeout:    getDurationEnv("OPENROUTER_TIMEOUT", 45*time.Second),
 	}
+}
+
+func CreateAdTimeout(providerTimeout time.Duration) time.Duration {
+	if providerTimeout > maxDuration-createAdPersistenceMargin {
+		return maxDuration
+	}
+
+	timeout := providerTimeout + createAdPersistenceMargin
+	if timeout < createAdMinimumTimeout {
+		return createAdMinimumTimeout
+	}
+	return timeout
+}
+
+func ServerWriteTimeout(providerTimeout time.Duration) time.Duration {
+	createTimeout := CreateAdTimeout(providerTimeout)
+	if createTimeout > maxDuration-serverWriteMargin {
+		return maxDuration
+	}
+	return createTimeout + serverWriteMargin
 }
 
 func buildHTTPAddr(host string, port string) string {
@@ -56,6 +92,14 @@ func buildDatabaseURL() string {
 func getEnv(key string, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func getDurationEnv(key string, fallback time.Duration) time.Duration {
+	value, err := time.ParseDuration(os.Getenv(key))
+	if err != nil || value <= 0 {
 		return fallback
 	}
 	return value

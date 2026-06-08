@@ -3,17 +3,25 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"smartbid-backend/internal/domain"
+	"smartbid-backend/internal/price"
 	"smartbid-backend/internal/repository"
 )
 
-const adLifetime = 24 * time.Hour
+const (
+	adLifetime                   = 24 * time.Hour
+	fallbackAdPriceKopecks int64 = 100
+	kopecksPerRuble        int64 = 100
+)
 
 type AdService struct {
 	ads             repository.AdRepository
+	priceEstimator  price.Estimator
 	outbox          repository.OutboxRepository
 	transactor      repository.Transactor
 	adCreatedTopic  string
@@ -23,6 +31,7 @@ type AdService struct {
 
 func NewAdService(
 	ads repository.AdRepository,
+	priceEstimator price.Estimator,
 	outbox repository.OutboxRepository,
 	transactor repository.Transactor,
 	adCreatedTopic string,
@@ -37,6 +46,7 @@ func NewAdService(
 
 	return &AdService{
 		ads:             ads,
+		priceEstimator:  priceEstimator,
 		outbox:          outbox,
 		transactor:      transactor,
 		adCreatedTopic:  adCreatedTopic,
@@ -134,21 +144,43 @@ func (s *AdService) createAdFinishedOutboxEvent(ctx context.Context, ad domain.A
 
 func (s *AdService) Create(ctx context.Context, input domain.CreateAdInput) (domain.Ad, error) {
 	if err := input.Validate(); err != nil {
-		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
 	}
 
-	input.Price = 100
-
+	estimatedPrice, err := s.estimateAdPrice(ctx, input)
+	if err != nil {
+		return domain.Ad{}, err
+	}
+	input.Price = estimatedPrice
 	input.Status = domain.AdStatusCreated
 
 	ad, err := s.ads.Create(ctx, input)
 	if err != nil {
-		fmt.Println("ERROR Create Ad:", err)
 		return domain.Ad{}, err
 	}
 
 	return ad, nil
+}
+
+func (s *AdService) estimateAdPrice(ctx context.Context, input domain.CreateAdInput) (int64, error) {
+	if s.priceEstimator == nil {
+		return fallbackAdPriceKopecks, nil
+	}
+
+	estimate, err := s.priceEstimator.Estimate(ctx, price.EstimateInput{
+		Title:       input.Title,
+		Description: input.Description,
+		Photo:       input.Photo,
+	})
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return 0, err
+	}
+	if err != nil || estimate.RecommendedRubles <= 0 || estimate.RecommendedRubles > math.MaxInt64/kopecksPerRuble {
+		fmt.Println(err)
+		return fallbackAdPriceKopecks, nil
+	}
+
+	return estimate.RecommendedRubles * kopecksPerRuble, nil
 }
 
 func (s *AdService) FindByID(ctx context.Context, id string) (domain.Ad, error) {
@@ -172,9 +204,14 @@ func (s *AdService) IncreasePrice(ctx context.Context, input domain.IncreaseAdPr
 		return domain.AdPriceUpdate{}, domain.ErrAdNotActive
 	}
 
+	increase := ad.Price / 20
+	if increase > math.MaxInt64-ad.Price {
+		return domain.AdPriceUpdate{}, fmt.Errorf("%w: increased price exceeds int64", domain.ErrInvalidAd)
+	}
+
 	return s.ads.UpdatePrice(ctx, domain.UpdateAdPriceInput{
 		AdID:         input.AdID,
-		Price:        ad.Price * 105 / 100,
+		Price:        ad.Price + increase,
 		PretendentID: input.PretendentID,
 		Now:          now,
 	})

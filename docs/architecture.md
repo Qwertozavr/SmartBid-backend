@@ -18,6 +18,8 @@ The project uses distributed programming principles:
 - `internal/app` - dependency composition.
 - `internal/domain` - business entities, statuses, and domain errors.
 - `internal/service` - application business logic.
+- `internal/price` - provider-neutral price estimation port.
+- `internal/price/openrouter` - OpenRouter price estimation adapter.
 - `internal/repository` - repository ports.
 - `internal/repository/postgres` - PostgreSQL repository implementation.
 - `internal/http/router` - route declarations.
@@ -36,6 +38,29 @@ The project uses distributed programming principles:
 - Producer-Consumer: backend публикует события, Telegram-бот идемпотентно обрабатывает их как Consumer.
 - Adapter: HTTP, PostgreSQL и Kafka изолированы адаптерами от бизнес-логики.
 - Dead Letter Queue: события после исчерпания попыток доставки публикуются в DLQ.
+
+## Price estimation
+
+Оценка цены отделена от конкретного внешнего провайдера интерфейсом
+`price.Estimator`. OpenRouter-клиент реализует этот интерфейс как адаптер, а
+`internal/app` создаёт адаптер из конфигурации и внедряет его в `AdService`.
+Для запуска приложения обязателен `OPENROUTER_API_KEY`; это относится и к
+запуску через Docker Compose.
+
+При создании объявления сервис после валидации передаёт оценщику заголовок,
+описание и необязательное фото. OpenRouter возвращает внутренний
+`recommended_price` как целое количество рублей. Сервис отвечает за перевод
+результата в копейки умножением на `100` и сохраняет его в существующее поле
+`Price`, используемое базой данных и API; отдельное поле `recommended_price`
+не добавляется.
+
+Обычные ошибки сети или провайдера, включая собственный timeout адаптера,
+некорректный или неположительный результат и переполнение при переводе в
+копейки приводят к резервной цене `100` копеек. Отмена или превышение deadline
+контекста вызывающей стороны/HTTP-запроса возвращаются вызывающей стороне и
+прерывают создание объявления до вызова repository, поэтому запись в базу
+данных не выполняется. Write timeout HTTP-сервера должен оставлять достаточно
+времени для оценки цены и последующего создания объявления.
 
 ## Ad timer
 
