@@ -27,8 +27,8 @@ jobs:
         with:
           version: v2.1.6
 
-      - name: Run tests
-        run: go test ./...
+      - name: Run tests and show coverage
+        run: make coverage
 
       - name: Build application
         run: go build ./cmd/smartbid

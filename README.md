@@ -116,7 +116,10 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 ```bash
 make lint
 make test
+make coverage
 ```
+
+Команда `make coverage` запускает тесты и выводит общий процент покрытия.
 
 ## API
 

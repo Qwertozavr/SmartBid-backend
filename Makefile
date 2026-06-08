@@ -1,4 +1,4 @@
-.PHONY: lint test
+.PHONY: lint test coverage
 
 GOLANGCI_LINT ?= golangci-lint
 
@@ -12,3 +12,7 @@ lint:
 
 test:
 	go test ./...
+
+coverage:
+	go test ./... -coverprofile=coverage.out -covermode=atomic
+	go tool cover -func=coverage.out | tail -n 1
